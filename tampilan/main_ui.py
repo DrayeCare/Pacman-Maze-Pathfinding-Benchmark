@@ -2,8 +2,9 @@ import pygame
 from core import config
 from tampilan.ui_mulai import show_mulai
 from tampilan.ui_setting import show_setting, _font
+from tampilan.ui_info import show_hasil
 
-MENU_SIZE = (680, 560)  # ukuran acuan desain; layout diskalakan ke layar penuh
+MENU_SIZE = (680, 560)
 FPS = getattr(config, "FPS", 60)
 
 COLOR_BG = getattr(config, "COLOR_BG", (0, 0, 0))
@@ -24,14 +25,9 @@ MENU_ITEMS = [
     ("quit", "QUIT"),
 ]
 
-# Font memakai fungsi yang sama dengan layar Setting (_font diimpor di atas),
-# jadi kalau font di ui_setting.py diganti, menu utama ikut berubah.
-
-
 def _text(screen, msg, size, color, center, bold=False):
     surf = _font(size, bold).render(str(msg), True, color)
     screen.blit(surf, surf.get_rect(center=center))
-
 
 class Button:
     def __init__(self, rect, label, value, font_size=22):
@@ -49,7 +45,6 @@ class Button:
     def clicked(self, event):
         return (event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
                 and self.rect.collidepoint(event.pos))
-
 
 def show_main_menu(screen=None):
     screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
@@ -95,11 +90,11 @@ def show_main_menu(screen=None):
         pygame.display.flip()
         clock.tick(FPS)
 
-
 def run():
-    """Alur layar: Main Menu -> Mulai (pilih map & algoritma) -> kembali."""
     pygame.init()
     screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+
+    data_hasil_percobaan = []
 
     while True:
         pilihan = show_main_menu(screen)
@@ -121,8 +116,21 @@ def run():
             if hasil == "quit":
                 break
             continue
-    pygame.quit()
 
+        if pilihan == "info":
+            if not data_hasil_percobaan:
+                data_dummy = [
+                    {"maze_id": 1, "nama_map": "Maze Mudah - Banyak Jalur", "kondisi": "Pac-Man Diam", "waktu": 0.342, "simpul": 87, "panjang": 15},
+                    {"maze_id": 2, "nama_map": "Maze Sedang - Loop", "kondisi": "Pac-Man Diam", "waktu": 0.512, "simpul": 120, "panjang": 22},
+                    {"maze_id": 3, "nama_map": "Maze Sulit - Belokan", "kondisi": "Pac-Man Bergerak", "waktu": 1.234, "simpul": 340, "panjang": 45},
+                ]
+                show_hasil(screen, data_dummy)
+            else:
+                show_hasil(screen, data_hasil_percobaan)
+                
+            continue
+
+    pygame.quit()
 
 if __name__ == "__main__":
     run()
