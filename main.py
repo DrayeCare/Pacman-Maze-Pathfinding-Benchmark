@@ -6,7 +6,6 @@ from tampilan.ui_mulai import show_mulai
 from tampilan.ui_setting import show_setting
 from tampilan.ui_info import show_hasil
 
-# List global untuk menyimpan data
 data_hasil_percobaan = []
 
 def mainkan(screen, pilihan):
