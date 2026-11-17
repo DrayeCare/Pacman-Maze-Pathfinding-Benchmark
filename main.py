@@ -59,13 +59,24 @@ def main():
                 break
             
         elif menu == "mulai":
-            pilihan = show_mulai(screen)
-            if pilihan == "quit":
-                break
-            if pilihan != "back":
+            keluar_dari_mulai = False
+            while True:
+                pilihan = show_mulai(screen)
+                if pilihan == "quit":
+                    keluar_dari_mulai = True
+                    break
+                if pilihan == "back":
+                    break
+
                 hasil_akhir = mainkan(screen, pilihan)
                 if hasil_akhir == "quit":
+                    keluar_dari_mulai = True
                     break
+                if hasil_akhir == "back":
+                    continue
+                break
+            if keluar_dari_mulai:
+                break
                     
         elif menu == "info":
             # Panggil UI Info

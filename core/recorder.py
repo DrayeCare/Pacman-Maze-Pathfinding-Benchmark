@@ -17,7 +17,8 @@ class Recorder:
 
     def reset(self):
         self.history_moves = []
-        
+        self.history_hasil = []
+
     # --- FUNGSI BARU UNTUK MENYIMPAN HASIL PERCOBAAN ---
     def rekam_hasil(self, maze_id, nama_map, kondisi, waktu, simpul, panjang):
         self.history_hasil.append({

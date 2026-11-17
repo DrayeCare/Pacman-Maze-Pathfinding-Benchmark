@@ -37,15 +37,14 @@ GAME_TITLE = "Pac-Man: BFS vs A* Search Pathfinding"
 FPS = 10  # Frame per second (kecepatan tick simulasi grid)
 
 # Kecepatan karakter (1 tick = bergerak 1 kotak grid)
-# Nilai dibuat sama untuk membandingkan BFS dan A* secara adil
+# PACMAN_MOVE_EVERY / GHOST_MOVE_EVERY dipertahankan untuk kompatibilitas.
 PACMAN_MOVE_EVERY = 1
 GHOST_MOVE_EVERY = 1
 
-# Delay pergerakan karakter dalam satuan detik.
-# Dihitung dari MOVE_EVERY dibagi FPS -> tick 1 pada FPS 10 = 0.1 detik.
+# Delay pergerakan karakter dalam satuan detik (tetap, tidak bergantung pada FPS).
 # Konstanta ini dipakai oleh core/game.py untuk mengatur timing gerak.
-PACMAN_MOVE_DELAY = PACMAN_MOVE_EVERY / FPS
-GHOST_MOVE_DELAY = GHOST_MOVE_EVERY / FPS
+PACMAN_MOVE_DELAY = 0.125
+GHOST_MOVE_DELAY = 0.280
 
 # ==============================================================================
 # 3. LOGIKA MAZE GRID DAN DIRECTIONS
