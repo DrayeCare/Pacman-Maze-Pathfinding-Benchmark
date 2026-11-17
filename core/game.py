@@ -4,13 +4,14 @@ import pygame
 from algoritma.astar import cari_jalur_astar
 from algoritma.bfs import cari_jalur_bfs
 from core import config
-from tampilan.ui_setting import get_movement_keys # Ubah jadi ui_setting jika sudah rename
+from tampilan.ui_setting import get_movement_keys
 
 SEARCH = {"bfs": cari_jalur_bfs, "astar": cari_jalur_astar}
 
 class Game:
-    def __init__(self, maze_path, algorithm="astar"):
+    def __init__(self, maze_path, algorithm="astar", condition="diam"):
         self.algorithm = algorithm.lower()
+        self.condition = condition  
         self.search_func = SEARCH.get(self.algorithm, cari_jalur_astar)
         
         with open(maze_path, "r") as f:
@@ -23,12 +24,15 @@ class Game:
 
         self.state = config.STATE_PLAYING 
         self.ghost_last_move_time = pygame.time.get_ticks()
+        self.pacman_last_move_time = pygame.time.get_ticks()
+        self.pacman_move_delay = 0.15 # Jeda gerak Pac-Man (150ms)
 
         self.total_nodes = 0
         self.total_time = 0.0
         self.search_count = 0
         self.last_path_length = 0
         self.current_path = []
+        self.exit_path = [] 
 
         # Setup Kontrol (WASD & Panah)
         self.key_dir = {
@@ -36,7 +40,6 @@ class Game:
             pygame.K_w: (-1, 0), pygame.K_s: (1, 0), pygame.K_a: (0, -1), pygame.K_d: (0, 1)
         }
         
-        # Coba ambil dari setting jika fungsinya ada
         try:
             keys = get_movement_keys()
             if isinstance(keys, dict) and "up" in keys:
@@ -75,15 +78,7 @@ class Game:
         return "pacman" if self.state == config.STATE_WIN else "ghost"
 
     def handle_input(self, event):
-        if self.state != config.STATE_PLAYING or event.type != pygame.KEYDOWN:
-            return
-        if event.key in self.key_dir:
-            dr, dc = self.key_dir[event.key]
-            nr, nc = self.pacman_pos[0] + dr, self.pacman_pos[1] + dc
-            if self.is_valid_move(nr, nc):
-                self.pacman_pos = [nr, nc]
-                self.update_ghost_path()
-                self.check_game_conditions()
+        pass # Input dipindah ke update() agar tidak sepam
 
     def is_valid_move(self, r, c):
         return (0 <= r < len(self.grid) and 0 <= c < len(self.grid[0]) and self.grid[r][c] != 1)
@@ -92,6 +87,40 @@ class Game:
         if self.state != config.STATE_PLAYING:
             return
         now = pygame.time.get_ticks()
+
+        # 1. PERGERAKAN PAC-MAN
+        if now - self.pacman_last_move_time >= self.pacman_move_delay * 1000:
+            moved = False
+            
+            if self.condition == "bergerak":
+                # Mode Otomatis
+                if not self.exit_path:
+                    path, nodes, elapsed = self.search_func(self.grid, tuple(self.pacman_pos), tuple(self.exit_pos))
+                    self.total_nodes += nodes
+                    self.total_time += elapsed
+                    self.search_count += 1
+                    self.exit_path = path[1:] if len(path) > 1 else []
+                
+                if self.exit_path:
+                    self.pacman_pos = list(self.exit_path.pop(0))
+                    moved = True
+            else:
+                # Mode Manual (Tekan terus tidak sepam)
+                keys = pygame.key.get_pressed()
+                for key, (dr, dc) in self.key_dir.items():
+                    if keys[key]: 
+                        nr, nc = self.pacman_pos[0] + dr, self.pacman_pos[1] + dc
+                        if self.is_valid_move(nr, nc):
+                            self.pacman_pos = [nr, nc]
+                            moved = True
+                        break
+            
+            if moved:
+                self.pacman_last_move_time = now
+                self.update_ghost_path()
+                self.check_game_conditions()
+
+        # 2. PERGERAKAN GHOST
         if now - self.ghost_last_move_time >= config.GHOST_MOVE_DELAY * 1000:
             self.ghost_last_move_time = now
             if self.current_path:
@@ -124,6 +153,7 @@ class Game:
         pygame.draw.circle(screen, config.COLOR_GHOST, (gc*config.TILE_SIZE+config.TILE_SIZE//2, gr*config.TILE_SIZE+config.TILE_SIZE//2), config.TILE_SIZE//2-3)
 
 
+# FUNGSI YANG HILANG TADI, SEKARANG SUDAH DIKEMBALIKAN
 def run_game(screen, game):
     clock = pygame.time.Clock()
     while game.state == config.STATE_PLAYING:
