@@ -7,7 +7,6 @@ from tampilan.ui_setting import show_setting
 from tampilan.ui_info import show_hasil
 
 data_hasil_percobaan = []
-
 def mainkan(screen, pilihan):
     while True:
         maze_file = config.MAZE_FILES[pilihan["maze"]]
@@ -78,3 +77,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# Huwaiza ahma
