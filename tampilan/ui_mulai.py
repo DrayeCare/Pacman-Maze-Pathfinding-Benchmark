@@ -296,7 +296,7 @@ def show_mulai(screen=None):
     pygame.display.set_caption("Pac-Man AI: BFS vs A*")
     w, h = screen.get_size()
     clock = pygame.time.Clock()
-    s = h / 850.0  # Skala referensi vertikal
+    s = min(h / 850.0, w / 1400.0)  # Skala dibatasi viewport agar layout tetap muat
 
     sel = {"maze": 1, "algorithm": "bfs", "condition": "diam"}
 
