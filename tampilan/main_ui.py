@@ -193,7 +193,7 @@ def show_main_menu(screen=None):
     w, h = screen.get_size()
     clock = pygame.time.Clock()
     portrait = w / max(h, 1) < 1.25
-    s = (max(0.75, min(h / 720.0, w / 900.0)) if portrait
+    s = (max(0.55, min(h / 720.0, w / 900.0)) if portrait
          else max(0.45, min(h / 720.0, w / 1280.0)))
     margin = int(theme.XL * s)
 
