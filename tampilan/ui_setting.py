@@ -225,7 +225,7 @@ def show_setting(screen=None):
     pygame.display.set_caption("Pac-Man AI: BFS vs A*")
     w, h = screen.get_size()
     clock = pygame.time.Clock()
-    s = h / 720
+    s = min(h / 720.0, w / 1280.0)  # Skala dibatasi viewport
     cx = w // 2
 
     saved_choice = _read_saved()
