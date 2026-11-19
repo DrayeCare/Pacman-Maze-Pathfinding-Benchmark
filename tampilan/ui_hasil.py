@@ -219,7 +219,7 @@ def show_hasil(screen=None, winner="pacman", stats=None, info=None):
     pygame.display.set_caption("Pac-Man AI: BFS vs A*")
     w, h = screen.get_size()
     clock = pygame.time.Clock()
-    s = min(h / 720, w / 1280)  # skala layout (acuan 1280 x 720)
+    s = min(h / 720.0, w / 1280.0)  # skala layout dibatasi viewport
     cx = w // 2
 
     stats = stats or {}
