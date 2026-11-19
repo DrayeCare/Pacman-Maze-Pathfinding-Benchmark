@@ -29,7 +29,10 @@ def mainkan(screen, pilihan):
             "kondisi": "Pac-Man Bergerak" if pilihan.get("condition") == "bergerak" else "Pac-Man Diam",
             "waktu": round(stats.get("search_time_ms", 0.0), 3), # Ambil dari search_time_ms
             "simpul": stats.get("nodes_explored", 0),            # Ambil dari nodes_explored
-            "panjang": stats.get("path_length", 0)               # Ambil dari path_length
+            "panjang": stats.get("path_length", 0),               # Ambil dari path_length
+            # Field display-only: tidak masuk CSV (export_to_csv menulis field eksplisit).
+            "algoritma": pilihan.get("algorithm", ""),
+            "hasil": "MENANG" if game.state == config.STATE_WIN else "KALAH",
         }
         data_hasil_percobaan.append(data_baru)
         

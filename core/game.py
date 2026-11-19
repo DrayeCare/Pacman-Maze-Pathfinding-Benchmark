@@ -1,4 +1,5 @@
 import json
+import math
 from collections import deque
 
 import pygame
@@ -6,7 +7,11 @@ import pygame
 from algoritma.astar import cari_jalur_astar
 from algoritma.bfs import cari_jalur_bfs
 from core import config
+from tampilan import theme
 from tampilan.ui_setting import get_movement_keys
+from tampilan.visual import (gambar_exit, gambar_ghost, gambar_hud,
+                             gambar_maze, gambar_pacman, gambar_path_aktif,
+                             hitung_layout, pusat_tile)
 
 SEARCH = {"bfs": cari_jalur_bfs, "astar": cari_jalur_astar}
 PACMAN_PATHFINDER = cari_jalur_bfs
@@ -226,23 +231,48 @@ class Game:
             self.state = config.STATE_LOSE
 
     def render(self, screen):
+        """Render murni visual. Tidak mengubah posisi, state, atau metrik."""
+        layout = hitung_layout(screen.get_size())
         screen.fill(config.COLOR_BG)
-        for r in range(len(self.grid)):
-            for c in range(len(self.grid[0])):
-                rect = pygame.Rect(c * config.TILE_SIZE, r * config.TILE_SIZE, config.TILE_SIZE, config.TILE_SIZE)
-                if self.grid[r][c] == 1:
-                    pygame.draw.rect(screen, config.COLOR_WALL, rect)
-                else:
-                    pygame.draw.rect(screen, config.COLOR_PATH, rect, 1)
-                    
-        er, ec = self.exit_pos
-        pygame.draw.rect(screen, config.COLOR_EXIT, (ec*config.TILE_SIZE+4, er*config.TILE_SIZE+4, config.TILE_SIZE-8, config.TILE_SIZE-8), border_radius=6)
-        
-        pr, pc = self.pacman_pos
-        pygame.draw.circle(screen, config.COLOR_PACMAN, (pc*config.TILE_SIZE+config.TILE_SIZE//2, pr*config.TILE_SIZE+config.TILE_SIZE//2), config.TILE_SIZE//2-3)
-        
-        gr, gc = self.ghost_pos
-        pygame.draw.circle(screen, config.COLOR_GHOST, (gc*config.TILE_SIZE+config.TILE_SIZE//2, gr*config.TILE_SIZE+config.TILE_SIZE//2), config.TILE_SIZE//2-3)
+
+        gambar_maze(screen, layout, self.grid)
+        # Path aktif adalah keluaran nyata algoritma (self.current_path).
+        # Tidak menggambar visited/frontier karena tidak dikembalikan algoritma.
+        # Sertakan posisi Ghost sekarang agar garis menyambung ke sprite.
+        # Ini tetap data nyata: ghost_pos + sisa path dari algoritma.
+        path_tampil = ([list(self.ghost_pos)] + self.current_path) if self.current_path else []
+        gambar_path_aktif(screen, layout, path_tampil,
+                          theme.warna_algoritma(self.algorithm))
+        gambar_exit(screen, layout, self.exit_pos)
+
+        now = pygame.time.get_ticks()
+        bergerak = self.condition == "bergerak"
+
+        # Pac-Man: mulut membuka-menututup saat bergerak, menghadap arah terakhir.
+        arah_pacman = self.current_dir if (bergerak and self.current_dir) else (1, 0)
+        if bergerak:
+            mulut = 8 + 27 * (0.5 + 0.5 * math.sin(now / 90.0))
+        else:
+            mulut = 20
+        px, py = pusat_tile(layout, self.pacman_pos[0], self.pacman_pos[1])
+        radius = max(3, int(layout["tile"] * 0.40))
+        gambar_pacman(screen, (px, py), radius, arah_pacman,
+                      mouth_deg=int(mulut), color=theme.PACMAN,
+                      bg=theme.PATH, eye=True)
+
+        # Ghost: arah diambil dari langkah berikutnya pada path yang sudah ada.
+        if self.current_path:
+            nr, nc = self.current_path[0]
+            arah_ghost = (nr - self.ghost_pos[0], nc - self.ghost_pos[1])
+        else:
+            arah_ghost = (self.pacman_pos[0] - self.ghost_pos[0],
+                          self.pacman_pos[1] - self.ghost_pos[1])
+        gx, gy = pusat_tile(layout, self.ghost_pos[0], self.ghost_pos[1])
+        bob = math.sin(now / 130.0) * max(1, radius * 0.06)
+        gambar_ghost(screen, (gx, gy), radius, arah_ghost,
+                     color=theme.GHOST_RED, bob=bob)
+
+        gambar_hud(screen, layout, self)
 
 
 # FUNGSI YANG HILANG TADI, SEKARANG SUDAH DIKEMBALIKAN
