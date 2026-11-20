@@ -37,6 +37,7 @@ import sys
 import pygame
 
 from core import config
+from core import audio
 from tampilan import theme
 
 FPS = getattr(config, "FPS", 60)
@@ -273,6 +274,7 @@ def show_hasil(screen=None, winner="pacman", stats=None, info=None):
 
     while True:
         for event in pygame.event.get():
+            audio.handle_event(event)
             if event.type == pygame.QUIT:
                 return "quit"
             if event.type == pygame.KEYDOWN:

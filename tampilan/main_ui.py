@@ -10,6 +10,7 @@ import math
 import pygame
 
 from core import config
+from core import audio
 from tampilan import theme
 from tampilan.ui_mulai import show_mulai
 from tampilan.ui_setting import show_setting
@@ -224,6 +225,7 @@ def show_main_menu(screen=None):
     while True:
         t = pygame.time.get_ticks()
         for event in pygame.event.get():
+            audio.handle_event(event)
             if event.type == pygame.QUIT:
                 return "quit"
             if event.type == pygame.KEYDOWN:
@@ -243,7 +245,7 @@ def show_main_menu(screen=None):
                    (nav.centerx, nav.top + int(28 * s)), bold=True)
         for b in buttons:
             b.draw(screen, t)
-        theme.text(screen, "Klik atau tekan 1-4   |   ESC = keluar",
+        theme.text(screen, "1-4 pilih | M musik | -/+ volume | ESC keluar",
                    int(theme.SIZE_CAPTION * s), theme.TEXT_MUTED,
                    (nav.centerx, nav.bottom - int(18 * s)))
 

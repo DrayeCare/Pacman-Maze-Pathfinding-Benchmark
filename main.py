@@ -1,4 +1,5 @@
 import pygame
+from core import audio
 from core import config
 from core.game import Game, run_game
 from tampilan.main_ui import show_main_menu
@@ -49,6 +50,8 @@ def mainkan(screen, pilihan):
 
 def main():
     pygame.init()
+    if not audio.init_music():
+        print("[BGM] Tidak ada file musik; game tetap berjalan tanpa BGM.")
     screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
     
     while True:
@@ -87,6 +90,7 @@ def main():
             if aksi_info == "quit":
                 break
                 
+    audio.shutdown()
     pygame.quit()
 
 if __name__ == "__main__":

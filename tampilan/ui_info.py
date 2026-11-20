@@ -12,6 +12,11 @@ except ImportError:
         MAZE_FILES = {1: "dummy.json", 2: "dummy.json", 3: "dummy.json"}
     config = DummyConfig()
 
+try:
+    from core import audio
+except ImportError:
+    audio = None
+
 from tampilan import theme
 
 # ==============================================================================
@@ -277,6 +282,8 @@ def show_hasil(screen, data_percobaan):
         is_hover_back = btn_back_rect.collidepoint(mouse_pos)
 
         for event in pygame.event.get():
+            if audio is not None:
+                audio.handle_event(event)
             if event.type == pygame.QUIT:
                 return "quit"
             elif event.type == pygame.KEYDOWN:

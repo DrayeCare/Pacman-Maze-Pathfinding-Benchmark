@@ -33,6 +33,11 @@ GHOST_PINK = (242, 150, 190)
 GHOST_CYAN = (86, 200, 224)
 GHOST_ORANGE = (242, 168, 86)
 
+# Maze solid beveled (dipakai visual.gambar_maze)
+WALL_SOLID = (58, 78, 142)
+WALL_BEVEL_LIGHT = (88, 112, 184)
+WALL_BEVEL_DARK = (34, 48, 94)
+
 # Identitas algoritma — dipakai konsisten di semua layar
 BFS = (72, 190, 255)
 ASTAR = (255, 176, 72)

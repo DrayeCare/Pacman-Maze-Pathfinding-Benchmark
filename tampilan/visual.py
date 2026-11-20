@@ -15,6 +15,7 @@ import pygame
 
 from core import config
 from tampilan import theme
+from tampilan import sprites
 
 # HUD desain 72 px (config.HUD_HEIGHT dipakai sebagai batas bawah, tidak diubah)
 HUD_DESIGN_HEIGHT = 72
@@ -83,6 +84,10 @@ def gambar_pacman(surface, center, radius, direction=(1, 0), mouth_deg=28.0,
     cx, cy = int(center[0]), int(center[1])
     warna = theme.PACMAN if color is None else color
     latar = theme.PATH if bg is None else bg
+    sprite = sprites.pacman_surface(direction, mouth_deg, warna, int(r * 2.0))
+    if sprite is not None:
+        surface.blit(sprite, sprite.get_rect(center=(cx, cy)))
+        return
     vx, vy = _vektor(direction)
     theta = math.atan2(vy, vx)
 
@@ -106,6 +111,10 @@ def gambar_ghost(surface, center, radius, direction=(1, 0), color=None,
     r = max(int(radius), 3)
     cx, cy = int(center[0]), int(center[1]) + int(bob)
     warna = theme.GHOST_RED if color is None else color
+    sprite = sprites.ghost_surface(direction, warna, int(r * 2.0))
+    if sprite is not None:
+        surface.blit(sprite, sprite.get_rect(center=(cx, cy)))
+        return
 
     pygame.draw.ellipse(surface, warna, (cx - r, cy - r, 2 * r, 2 * r))
     pygame.draw.rect(surface, warna, (cx - r, cy, 2 * r, max(1, int(r * 0.75))))
@@ -145,19 +154,47 @@ def gambar_exit(surface, layout, pos, color=None):
 
 
 def gambar_maze(surface, layout, grid):
+    """Maze solid beveled: dinding slate-blue padat dengan depth ringan.
+
+    Geometri dan ukuran tile tidak diubah, sehingga overlay jalur BFS/A*
+    tetap sejajar persis dengan sel maze. Bevel hanya pada sisi yang
+    berbatasan dengan koridor atau tepi luar, agar tekstur tetap bersih.
+    """
     t = layout["tile"]
-    sorotan = max(2, t // 6)
-    for r, baris in enumerate(grid):
-        for c, nilai in enumerate(baris):
-            x, y = posisi_tile(layout, r, c)
-            rect = pygame.Rect(x, y, t, t)
-            if nilai == 1:
-                pygame.draw.rect(surface, theme.WALL, rect)
-                if t >= 8:
-                    pygame.draw.rect(surface, theme.WALL_HI,
-                                     (x + 1, y + 1, sorotan, sorotan))
-            else:
-                pygame.draw.rect(surface, theme.PATH, rect, 1)
+    if t <= 0:
+        return
+    ox, oy = layout["origin_x"], layout["origin_y"]
+    baris, kolom = len(grid), len(grid[0])
+
+    # Koridor gelap: satu bidang datar tanpa grid dekoratif.
+    pygame.draw.rect(surface, theme.PATH, layout["play_rect"])
+
+    # Isi dinding sebagai satu massa solid.
+    for r in range(baris):
+        for c in range(kolom):
+            if grid[r][c] == 1:
+                pygame.draw.rect(surface, theme.WALL_SOLID,
+                                 (ox + c * t, oy + r * t, t, t))
+
+    # Bevel pada tepi yang terlihat saja. Cahaya dari kiri-atas.
+    tebal = max(1, min(4, t // 8))
+    for r in range(baris):
+        for c in range(kolom):
+            if grid[r][c] != 1:
+                continue
+            x, y = ox + c * t, oy + r * t
+            if r == 0 or grid[r - 1][c] != 1:
+                pygame.draw.rect(surface, theme.WALL_BEVEL_LIGHT,
+                                 (x, y, t, tebal))
+            if c == 0 or grid[r][c - 1] != 1:
+                pygame.draw.rect(surface, theme.WALL_BEVEL_LIGHT,
+                                 (x, y, tebal, t))
+            if r == baris - 1 or grid[r + 1][c] != 1:
+                pygame.draw.rect(surface, theme.WALL_BEVEL_DARK,
+                                 (x, y + t - tebal, t, tebal))
+            if c == kolom - 1 or grid[r][c + 1] != 1:
+                pygame.draw.rect(surface, theme.WALL_BEVEL_DARK,
+                                 (x + t - tebal, y, tebal, t))
 
 
 # ---------------------------------------------------------------------------

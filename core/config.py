@@ -146,3 +146,19 @@ STATE_LOSE = "lose"
 # ==============================================================================
 TEXT_WIN = "MENANG! Pac-Man berhasil mencapai Exit"
 TEXT_LOSE = "KALAH! Pac-Man tertangkap oleh Ghost"
+
+# ==============================================================================
+# 11. AUDIO / BACKGROUND MUSIC (BGM)
+# ==============================================================================
+# File musik ditempatkan di folder assets/audio/ dengan salah satu nama ini.
+# Tidak ada unduhan otomatis; lihat assets/audio/README.txt.
+AUDIO_DIR = os.path.join(BASE_DIR, "assets", "audio")
+AUDIO_FILES = (
+    os.path.join(AUDIO_DIR, "bgm.ogg"),
+    os.path.join(AUDIO_DIR, "bgm.mp3"),
+    os.path.join(AUDIO_DIR, "bgm.wav"),
+)
+
+# Volume awal sengaja rendah agar tidak mendominasi permainan (0.0 - 1.0).
+AUDIO_VOLUME = 0.18
+AUDIO_VOLUME_STEP = 0.05
