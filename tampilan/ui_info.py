@@ -12,48 +12,42 @@ except ImportError:
         MAZE_FILES = {1: "dummy.json", 2: "dummy.json", 3: "dummy.json"}
     config = DummyConfig()
 
+try:
+    from core import audio
+except ImportError:
+    audio = None
+
+from tampilan import theme
+
 # ==============================================================================
-# KONFIGURASI WARNA & FONT
+# KONFIGURASI WARNA & FONT — semua token berasal dari theme.py
 # ==============================================================================
 FPS = getattr(config, "FPS", 60)
-C_BG = (8, 8, 20) 
-
-C_CARD_BG = (20, 20, 30)
-C_CARD_BORDER = (40, 100, 150)
-
-C_MAP_BG = (85, 60, 130)
-C_MAP_BORDER = (180, 130, 220)
-
-C_TITLE = (255, 255, 255)
-C_TEXT_CYAN = (0, 220, 255)
-C_TEXT_GRAY = (150, 150, 170)
-
-C_STAT_BG = (12, 12, 20)
-C_STAT_BORDER = (50, 50, 70)
-
-C_WALL = (34, 34, 221)
-C_PATH = (0, 0, 0)
-C_EXIT = (0, 200, 0)
-C_PACMAN = (255, 220, 0)
-C_GHOST = (255, 0, 0)
-
-C_BTN_EXPORT = (30, 120, 70)
-C_BTN_EXPORT_HOVER = (40, 160, 90)
-C_MSG_SUCCESS = (50, 255, 100)
-
-# --- WARNA TOMBOL BACK BARU (Sesuai Gambar) ---
-C_BACK_BG = (74, 46, 107)       # Ungu gelap
-C_BACK_BG_HOVER = (94, 66, 127) # Ungu lebih terang saat di-hover
-C_BACK_BORDER = (255, 255, 255) # Border putih
-C_BACK_ARROW = (255, 255, 255)  # Panah putih
-
-_fonts = {}
+C_BG = theme.BG_DEEP
+C_CARD_BG = theme.SURFACE
+C_CARD_BORDER = theme.BORDER
+C_MAP_BG = theme.SURFACE_2
+C_MAP_BORDER = theme.BORDER
+C_TITLE = theme.TEXT
+C_TEXT_CYAN = theme.BFS
+C_TEXT_GRAY = theme.TEXT_MUTED
+C_STAT_BG = theme.BG
+C_STAT_BORDER = theme.BORDER
+C_WALL = theme.WALL
+C_PATH = theme.PATH
+C_EXIT = theme.EXIT
+C_PACMAN = theme.PACMAN
+C_GHOST = theme.GHOST_RED
+C_BTN_EXPORT = theme.SUCCESS
+C_BTN_EXPORT_HOVER = theme.lighten(theme.SUCCESS, 25)
+C_MSG_SUCCESS = theme.SUCCESS
+C_BACK_BG = theme.SURFACE_2
+C_BACK_BG_HOVER = theme.lighten(theme.SURFACE_2, 24)
+C_BACK_BORDER = theme.TEXT_MUTED
+C_BACK_ARROW = theme.TEXT
 
 def _font(size, bold=False):
-    key = (max(int(size), 8), bold)
-    if key not in _fonts:
-        _fonts[key] = pygame.font.SysFont("consolas", key[0], bold=bold)
-    return _fonts[key]
+    return theme.font(size, bold)
 
 def _text(screen, msg, size, color, center, bold=False):
     surf = _font(size, bold).render(str(msg), True, color)
@@ -149,17 +143,29 @@ class ExperimentCard:
         self.index = index
         self.data = data
         
-    def draw(self, screen, screen_offset_y):
+    def draw(self, screen, screen_offset_y, maks=None):
         draw_rect = self.rect.copy()
         draw_rect.y += screen_offset_y
-        
+        maks = maks or {}
+        warna_algo = theme.warna_algoritma(self.data.get("algoritma", ""))
+
         if draw_rect.bottom < 0 or draw_rect.top > screen.get_height():
             return
 
         pygame.draw.rect(screen, C_CARD_BG, draw_rect, border_radius=12)
-        pygame.draw.rect(screen, C_CARD_BORDER, draw_rect, 2, border_radius=12)
+        pygame.draw.rect(screen, warna_algo, draw_rect, 2, border_radius=12)
 
-        _text(screen, f"PERCOBAAN {self.index}", int(16), C_TITLE, (draw_rect.centerx, draw_rect.y + 25), bold=True)
+        nama_algo = theme.label_algoritma(self.data.get("algoritma", ""))
+        judul_kartu = nama_algo if nama_algo != "—" else "PERCOBAAN {0}".format(self.index)
+        _text(screen, judul_kartu, 16, warna_algo,
+              (draw_rect.left + 78, draw_rect.y + 25), bold=True)
+        badge = pygame.Rect(draw_rect.right - 90, draw_rect.y + 12, 78, 26)
+        theme.badge_algoritma(screen, badge, self.data.get("algoritma", ""), 1.0)
+        hasil = self.data.get("hasil", "")
+        if hasil:
+            _text(screen, hasil, 11,
+                  theme.SUCCESS if hasil == "MENANG" else theme.DANGER,
+                  (badge.left - 38, badge.centery), bold=True)
 
         map_w = draw_rect.width - 40
         map_h = int(map_w * 0.65)
@@ -182,29 +188,42 @@ class ExperimentCard:
         gap = 5
         
         stats = [
-            ("WAKTU\nPENCARIAN", str(self.data["waktu"]), "ms", "clock"),
-            ("JUMLAH\nSIMPUL", str(self.data["simpul"]), "simpul", "nodes"),
-            ("PANJANG\nALUR", str(self.data["panjang"]), "langkah", "path")
+            ("waktu", "WAKTU\nPENCARIAN", str(self.data["waktu"]), "ms", "clock"),
+            ("simpul", "JUMLAH\nSIMPUL", str(self.data["simpul"]), "simpul", "nodes"),
+            ("panjang", "PANJANG\nALUR", str(self.data["panjang"]), "langkah", "path"),
         ]
 
-        for i, (label, val, unit, icon_type) in enumerate(stats):
+        for i, (kunci, label, val, unit, icon_type) in enumerate(stats):
             sx = draw_rect.x + 20 + i * (stat_w + gap)
             sub_rect = pygame.Rect(sx, stat_y, stat_w, stat_h)
-            
+
             pygame.draw.rect(screen, C_STAT_BG, sub_rect, border_radius=8)
             pygame.draw.rect(screen, C_STAT_BORDER, sub_rect, 1, border_radius=8)
-            
+
             icon_cy = sub_rect.y + 30
             if icon_type == "clock": _draw_icon_clock(screen, sub_rect.centerx, icon_cy, 12)
             elif icon_type == "nodes": _draw_icon_nodes(screen, sub_rect.centerx, icon_cy, 12)
             elif icon_type == "path": _draw_icon_path(screen, sub_rect.centerx, icon_cy, 12)
-            
+
             label_lines = label.split('\n')
-            for j, line in enumerate(label_lines):
-                _text(screen, line, int(9), C_TEXT_GRAY, (sub_rect.centerx, icon_cy + 22 + j*12), bold=True)
-            
-            _text(screen, val, int(22), C_TEXT_CYAN, (sub_rect.centerx, sub_rect.bottom - 35), bold=True)
-            _text(screen, unit, int(10), C_TEXT_GRAY, (sub_rect.centerx, sub_rect.bottom - 15))
+            for j, baris in enumerate(label_lines):
+                _text(screen, baris, 9, C_TEXT_GRAY, (sub_rect.centerx, icon_cy + 22 + j*12), bold=True)
+
+            _text(screen, val, 22, warna_algo, (sub_rect.centerx, sub_rect.bottom - 42), bold=True)
+            _text(screen, unit, 10, C_TEXT_GRAY, (sub_rect.centerx, sub_rect.bottom - 30))
+
+            # Bar perbandingan relatif terhadap maksimum data yang ditampilkan.
+            try:
+                rasio = min(1.0, max(0.0, float(val) / max(1e-9, float(maks.get(kunci, 1)))))
+            except (TypeError, ValueError):
+                rasio = 0.0
+            track = pygame.Rect(sub_rect.left + 12, sub_rect.bottom - 14,
+                                max(1, sub_rect.width - 24), 4)
+            pygame.draw.rect(screen, theme.BORDER, track, border_radius=2)
+            if rasio > 0:
+                pygame.draw.rect(screen, warna_algo,
+                                 (track.left, track.top, int(track.width * rasio), 4),
+                                 border_radius=2)
 
 # ==============================================================================
 # FUNGSI UTAMA MENAMPILKAN UI
@@ -232,7 +251,16 @@ def show_hasil(screen, data_percobaan):
     top_margin = 100
     
     cols = max(1, (w - gap_x) // (card_w + gap_x))
-    
+    maks = {}
+    for kunci in ("waktu", "simpul", "panjang"):
+        nilai = []
+        for d in data_percobaan:
+            try:
+                nilai.append(float(d.get(kunci, 0) or 0))
+            except (TypeError, ValueError):
+                pass
+        maks[kunci] = max(nilai) if nilai else 1.0
+
     cards = []
     for i, data in enumerate(data_percobaan):
         row = i // cols
@@ -254,6 +282,8 @@ def show_hasil(screen, data_percobaan):
         is_hover_back = btn_back_rect.collidepoint(mouse_pos)
 
         for event in pygame.event.get():
+            if audio is not None:
+                audio.handle_event(event)
             if event.type == pygame.QUIT:
                 return "quit"
             elif event.type == pygame.KEYDOWN:
@@ -287,7 +317,10 @@ def show_hasil(screen, data_percobaan):
         scroll_y = max(-max_scroll, min(0, scroll_y))
 
         screen.fill(C_BG)
-        _text(screen, "HASIL PENGUJIAN PAC-MAN", int(28), C_TITLE, (w // 2, 45), bold=True)
+        _text(screen, "HASIL PENGUJIAN PAC-MAN", 28, C_TITLE, (w // 2, 38), bold=True)
+        _text(screen, "BFS", 13, theme.BFS, (w // 2 - 46, 68), bold=True)
+        _text(screen, "vs", 12, C_TEXT_GRAY, (w // 2, 68))
+        _text(screen, "A*", 13, theme.ASTAR, (w // 2 + 46, 68), bold=True)
         
         # =====================================================================
         # GAMBAR TOMBOL BACK (Desain Baru Sesuai Gambar)
@@ -321,7 +354,7 @@ def show_hasil(screen, data_percobaan):
             _text(screen, msg_simpan, int(16), C_MSG_SUCCESS, (w // 2, 90), bold=True)
 
         for card in cards:
-            card.draw(screen, scroll_y)
+            card.draw(screen, scroll_y, maks)
 
         if max_scroll > 0:
             bar_h = max(50, int(h * (h / content_height)))

@@ -4,6 +4,8 @@ import os
 import pygame
 
 from core import config
+from core import audio
+from tampilan import theme
 
 FPS = getattr(config, "FPS", 60)
 
@@ -55,35 +57,29 @@ def get_movement_keys(controls=None):
     }
 
 
-C_BG = (8, 8, 20)
-C_TITLE = (110, 220, 255)
-C_SUBTITLE = (190, 190, 190)
-C_LABEL = (200, 200, 200)
-C_TEXT = (235, 235, 245)
-C_SUBTEXT = (210, 210, 226)
-C_MUTED = (154, 154, 184)
-C_BORDER = (240, 240, 250)
-C_CARD = (30, 30, 48)
-C_CARD_ACTIVE = (85, 60, 130)
-C_CARD_ACTIVE_BORDER = (195, 150, 255)
-C_KEY = (42, 42, 62)
-C_KEY_BORDER = (140, 140, 170)
-C_KEY_SHADOW = (20, 20, 31)
-C_BACK = (70, 45, 100)
-C_SAVE = (40, 125, 60)
-C_MENU = (42, 42, 62)
-C_OK = (80, 220, 120)
-C_ERR = (255, 100, 100)
-C_CHECK_DARK = (26, 16, 48)
-
-_fonts = {}
-
+C_BG = theme.BG_DEEP
+C_TITLE = theme.BFS
+C_SUBTITLE = theme.TEXT_MUTED
+C_LABEL = theme.TEXT_MUTED
+C_TEXT = theme.TEXT
+C_SUBTEXT = theme.TEXT_MUTED
+C_MUTED = theme.TEXT_MUTED
+C_BORDER = theme.BORDER
+C_CARD = theme.SURFACE
+C_CARD_ACTIVE = theme.BFS
+C_CARD_ACTIVE_BORDER = theme.lighten(theme.BFS, 45)
+C_KEY = theme.SURFACE_2
+C_KEY_BORDER = theme.BORDER
+C_KEY_SHADOW = theme.BG_DEEP
+C_BACK = theme.SURFACE_2
+C_SAVE = theme.SUCCESS
+C_MENU = theme.SURFACE_2
+C_OK = theme.SUCCESS
+C_ERR = theme.DANGER
+C_CHECK_DARK = theme.BG_DEEP
 
 def _font(size, bold=False):
-    key = (max(int(size), 8), bold)
-    if key not in _fonts:
-        _fonts[key] = pygame.font.SysFont("consolas", key[0], bold=bold)
-    return _fonts[key]
+    return theme.font(size, bold)
 
 
 def _text(screen, msg, size, color, center, bold=False):
@@ -230,7 +226,7 @@ def show_setting(screen=None):
     pygame.display.set_caption("Pac-Man AI: BFS vs A*")
     w, h = screen.get_size()
     clock = pygame.time.Clock()
-    s = h / 720
+    s = min(h / 720.0, w / 1280.0)  # Skala dibatasi viewport
     cx = w // 2
 
     saved_choice = _read_saved()
@@ -283,6 +279,7 @@ def show_setting(screen=None):
 
     while True:
         for event in pygame.event.get():
+            audio.handle_event(event)
             if event.type == pygame.QUIT:
                 return "quit"
             if event.type == pygame.KEYDOWN:
@@ -366,8 +363,8 @@ def show_setting(screen=None):
             screen,
             "Klik kartu untuk memilih | ENTER = simpan | "
             "ESC atau panah kiri atas = kembali ke menu utama",
-            int(14 * s),
-            C_MUTED,
+            int(16 * s),
+            theme.TEXT,
             (cx, int(692 * s)),
         )
 

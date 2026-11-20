@@ -1,4 +1,5 @@
 import json
+import math
 from collections import deque
 
 import pygame
@@ -6,32 +7,134 @@ import pygame
 from algoritma.astar import cari_jalur_astar
 from algoritma.bfs import cari_jalur_bfs
 from core import config
+from core import audio
+from tampilan import theme
 from tampilan.ui_setting import get_movement_keys
+from tampilan.visual import (gambar_exit, gambar_ghost, gambar_hud,
+                             gambar_maze, gambar_pacman, gambar_path_aktif,
+                             hitung_layout, pusat_tile)
 
 SEARCH = {"bfs": cari_jalur_bfs, "astar": cari_jalur_astar}
 PACMAN_PATHFINDER = cari_jalur_bfs
 
-# Jarak jalur minimum antar spawn. Berasal dari audit: jarak saat ini 12,
-# median jarak Pac-Man ke tile valid 18/19/23 pada M1/M2/M3.
-SPAWN_MIN_PATH_DISTANCE = 18
-SPAWN_PREFERRED_MAX_DISTANCE = 24
+# Penempatan spawn deterministik: lihat _pilih_spawn(). Jarak diukur melalui
+# jalur walkable dengan BFS lokal, bukan Manhattan/Euclidean, dan tidak
+# mengubah file maze JSON.
+SPAWN_MIN_TARGET = 30
+SPAWN_MIN_INTERSECTIONS = 5
 
 
-def _jarak_spawn(grid, start):
-    """BFS lokal untuk validasi spawn; tidak memakai SEARCH atau statistik Ghost."""
+def _peta_spawn(grid, start):
+    """BFS lokal: (jarak, induk) untuk validasi spawn; tidak memakai SEARCH."""
     if grid[start[0]][start[1]] == 1:
-        return {}
+        return {}, {}
     baris, kolom = len(grid), len(grid[0])
-    dist = {start: 0}
+    jarak = {start: 0}
+    induk = {start: None}
     antrean = deque([start])
     while antrean:
         r, c = antrean.popleft()
         for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
             nr, nc = r + dr, c + dc
-            if 0 <= nr < baris and 0 <= nc < kolom and grid[nr][nc] != 1 and (nr, nc) not in dist:
-                dist[(nr, nc)] = dist[(r, c)] + 1
+            if (0 <= nr < baris and 0 <= nc < kolom and grid[nr][nc] != 1
+                    and (nr, nc) not in jarak):
+                jarak[(nr, nc)] = jarak[(r, c)] + 1
+                induk[(nr, nc)] = (r, c)
                 antrean.append((nr, nc))
-    return dist
+    return jarak, induk
+
+
+def _derajat(grid, r, c):
+    """Jumlah tetangga walkable; >=3 menandakan titik keputusan/persimpangan."""
+    return sum(1 for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1))
+               if 0 <= r + dr < len(grid) and 0 <= c + dc < len(grid[0])
+               and grid[r + dr][c + dc] != 1)
+
+
+def _persimpangan(grid, induk, target):
+    """Hitung titik keputusan pada shortest-path dari start ke target."""
+    jalur = []
+    titik = target
+    while titik is not None:
+        jalur.append(titik)
+        titik = induk.get(titik)
+    jalur.reverse()
+    return sum(1 for r, c in jalur[1:-1] if _derajat(grid, r, c) >= 3)
+
+
+def _terdekat_manhattan(target, tersedia):
+    """Sel walkable terdekat ke sudut; tie-break deterministik berdasarkan koordinat."""
+    return min(tersedia, key=lambda t: (abs(t[0] - target[0]) + abs(t[1] - target[1]), t))
+
+
+def _pilih_spawn(grid):
+    """Pilih Player, Ghost, dan Exit secara deterministik memakai BFS.
+
+    Player dan Exit memakai pasangan sudut dengan jarak jalur terjauh. Ghost
+    dipilih dari sel walkable yang memaksimalkan jarak shortest-path ke Player,
+    lalu jumlah persimpangan pada rute, lalu jarak ke Exit. Tie-break selalu
+    berdasarkan koordinat agar reproducible.
+    """
+    baris, kolom = len(grid), len(grid[0])
+    valid = [(r, c) for r in range(baris) for c in range(kolom)
+             if grid[r][c] != 1]
+    if not valid:
+        return [0, 0], [0, 0], [0, 0]
+
+    sudut = [(0, 0), (0, kolom - 1), (baris - 1, 0), (baris - 1, kolom - 1)]
+    jangkar = []
+    for titik in sudut:
+        calon = _terdekat_manhattan(titik, valid)
+        if calon not in jangkar:
+            jangkar.append(calon)
+    for titik in valid:
+        if len(jangkar) >= 4:
+            break
+        if titik not in jangkar:
+            jangkar.append(titik)
+
+    peta = [_peta_spawn(grid, a) for a in jangkar]
+    jarak_jangkar = [item[0] for item in peta]
+    pasangan = []
+    for i in range(len(jangkar)):
+        for j in range(i + 1, len(jangkar)):
+            jarak = jarak_jangkar[i].get(jangkar[j])
+            if jarak is not None:
+                pasangan.append((jarak, i, j))
+
+    if pasangan:
+        pasangan.sort(key=lambda item: (-item[0], item[1], item[2]))
+        _, i_p, i_e = pasangan[0]
+    else:
+        i_p, i_e = 0, min(1, len(jangkar) - 1)
+
+    p, e = jangkar[i_p], jangkar[i_e]
+    dp, induk_p = peta[i_p]
+    de = peta[i_e][0]
+
+    kumpulan = [t for t in valid if t != p and t != e and t in dp and t in de]
+    if not kumpulan:
+        kumpulan = [t for t in valid if t != p and t != e]
+    if not kumpulan:
+        cadangan = valid[0] if valid[0] != p else (valid[1] if len(valid) > 1 else p)
+        return list(p), list(cadangan), list(e)
+
+    jauh = [t for t in kumpulan if dp[t] >= SPAWN_MIN_TARGET]
+    if jauh:
+        kumpulan = jauh
+    maks = max(dp[t] for t in kumpulan)
+    terbaik = [t for t in kumpulan if dp[t] == maks]
+    penuh = [t for t in terbaik
+             if _persimpangan(grid, induk_p, t) >= SPAWN_MIN_INTERSECTIONS]
+    if penuh:
+        terbaik = penuh
+
+    def skor(t):
+        return (-_persimpangan(grid, induk_p, t), -de.get(t, 0), t[0], t[1])
+
+    h = min(terbaik, key=skor)
+    return list(p), list(h), list(e)
+
 
 class Game:
     def __init__(self, maze_path, algorithm="astar", condition="diam"):
@@ -43,10 +146,7 @@ class Game:
             self.maze_data = json.load(f)
 
         self.grid = self.maze_data["grid"]
-        self.pacman_pos = list(self.maze_data["pacman_start"])
-        self.ghost_pos = list(self.maze_data["ghost_start"])
-        self.exit_pos = list(self.maze_data["exit"])
-        self._pastikan_spawn()
+        self.pacman_pos, self.ghost_pos, self.exit_pos = _pilih_spawn(self.grid)
 
         self.state = config.STATE_PLAYING 
         self.ghost_last_move_time = pygame.time.get_ticks()
@@ -83,54 +183,6 @@ class Game:
             pass
 
         self.update_ghost_path()
-
-    def _pastikan_spawn(self):
-        """Validasi jarak jalur spawn dengan BFS terpisah dari pencarian Ghost."""
-        grid = self.grid
-        p_asal = tuple(self.pacman_pos)
-        h_asal = tuple(self.ghost_pos)
-        e_asal = tuple(self.exit_pos)
-        valid = [(r, c) for r in range(len(grid)) for c in range(len(grid[0]))
-                 if grid[r][c] != 1]
-
-        def pos_valid(pos):
-            return (0 <= pos[0] < len(grid) and 0 <= pos[1] < len(grid[0])
-                    and grid[pos[0]][pos[1]] != 1)
-
-        def terdekat(asal, tersedia):
-            return min(tersedia, key=lambda t: (abs(t[0] - asal[0]) + abs(t[1] - asal[1]), t))
-
-        p = p_asal if pos_valid(p_asal) else terdekat(p_asal, valid)
-        e = e_asal if pos_valid(e_asal) else terdekat(e_asal, [t for t in valid if t != p])
-
-        dp = _jarak_spawn(grid, p)
-        de = _jarak_spawn(grid, e)
-        if p not in de:
-            e = terdekat(e_asal, [t for t in dp if t != p])
-            de = _jarak_spawn(grid, e)
-
-        ghost_pool = [t for t in valid if t != p and t != e]
-        h = h_asal if (pos_valid(h_asal) and h_asal in ghost_pool) else terdekat(h_asal, ghost_pool)
-        if h not in dp or h not in de:
-            h = terdekat(h_asal, [t for t in dp if t != p and t != e and t in de])
-
-        jarak = dp.get(h)
-        if jarak is None or jarak < SPAWN_MIN_PATH_DISTANCE:
-            kandidat = [t for t in dp if t != p and t != e and t in de
-                        and SPAWN_MIN_PATH_DISTANCE <= dp[t] <= SPAWN_PREFERRED_MAX_DISTANCE]
-            if not kandidat:
-                kandidat = [t for t in dp if t != p and t != e and t in de
-                            and dp[t] >= SPAWN_MIN_PATH_DISTANCE]
-            if kandidat:
-                h = min(kandidat, key=lambda t: (abs(t[0] - h_asal[0]) + abs(t[1] - h_asal[1]), t))
-            else:
-                tersedia = [t for t in dp if t != p and t != e and t in de]
-                if tersedia:
-                    h = max(tersedia, key=lambda t: dp[t])
-
-        self.pacman_pos = list(p)
-        self.ghost_pos = list(h)
-        self.exit_pos = list(e)
 
     def update_ghost_path(self):
         start = tuple(self.ghost_pos)
@@ -226,23 +278,48 @@ class Game:
             self.state = config.STATE_LOSE
 
     def render(self, screen):
+        """Render murni visual. Tidak mengubah posisi, state, atau metrik."""
+        layout = hitung_layout(screen.get_size())
         screen.fill(config.COLOR_BG)
-        for r in range(len(self.grid)):
-            for c in range(len(self.grid[0])):
-                rect = pygame.Rect(c * config.TILE_SIZE, r * config.TILE_SIZE, config.TILE_SIZE, config.TILE_SIZE)
-                if self.grid[r][c] == 1:
-                    pygame.draw.rect(screen, config.COLOR_WALL, rect)
-                else:
-                    pygame.draw.rect(screen, config.COLOR_PATH, rect, 1)
-                    
-        er, ec = self.exit_pos
-        pygame.draw.rect(screen, config.COLOR_EXIT, (ec*config.TILE_SIZE+4, er*config.TILE_SIZE+4, config.TILE_SIZE-8, config.TILE_SIZE-8), border_radius=6)
-        
-        pr, pc = self.pacman_pos
-        pygame.draw.circle(screen, config.COLOR_PACMAN, (pc*config.TILE_SIZE+config.TILE_SIZE//2, pr*config.TILE_SIZE+config.TILE_SIZE//2), config.TILE_SIZE//2-3)
-        
-        gr, gc = self.ghost_pos
-        pygame.draw.circle(screen, config.COLOR_GHOST, (gc*config.TILE_SIZE+config.TILE_SIZE//2, gr*config.TILE_SIZE+config.TILE_SIZE//2), config.TILE_SIZE//2-3)
+
+        gambar_maze(screen, layout, self.grid)
+        # Path aktif adalah keluaran nyata algoritma (self.current_path).
+        # Tidak menggambar visited/frontier karena tidak dikembalikan algoritma.
+        # Sertakan posisi Ghost sekarang agar garis menyambung ke sprite.
+        # Ini tetap data nyata: ghost_pos + sisa path dari algoritma.
+        path_tampil = ([list(self.ghost_pos)] + self.current_path) if self.current_path else []
+        gambar_path_aktif(screen, layout, path_tampil,
+                          theme.warna_algoritma(self.algorithm))
+        gambar_exit(screen, layout, self.exit_pos)
+
+        now = pygame.time.get_ticks()
+        bergerak = self.condition == "bergerak"
+
+        # Pac-Man: mulut membuka-menututup saat bergerak, menghadap arah terakhir.
+        arah_pacman = self.current_dir if (bergerak and self.current_dir) else (1, 0)
+        if bergerak:
+            mulut = 8 + 27 * (0.5 + 0.5 * math.sin(now / 90.0))
+        else:
+            mulut = 20
+        px, py = pusat_tile(layout, self.pacman_pos[0], self.pacman_pos[1])
+        radius = max(3, int(layout["tile"] * 0.40))
+        gambar_pacman(screen, (px, py), radius, arah_pacman,
+                      mouth_deg=int(mulut), color=theme.PACMAN,
+                      bg=theme.PATH, eye=True)
+
+        # Ghost: arah diambil dari langkah berikutnya pada path yang sudah ada.
+        if self.current_path:
+            nr, nc = self.current_path[0]
+            arah_ghost = (nr - self.ghost_pos[0], nc - self.ghost_pos[1])
+        else:
+            arah_ghost = (self.pacman_pos[0] - self.ghost_pos[0],
+                          self.pacman_pos[1] - self.ghost_pos[1])
+        gx, gy = pusat_tile(layout, self.ghost_pos[0], self.ghost_pos[1])
+        bob = math.sin(now / 130.0) * max(1, radius * 0.06)
+        gambar_ghost(screen, (gx, gy), radius, arah_ghost,
+                     color=theme.GHOST_RED, bob=bob)
+
+        gambar_hud(screen, layout, self)
 
 
 # FUNGSI YANG HILANG TADI, SEKARANG SUDAH DIKEMBALIKAN
@@ -251,6 +328,7 @@ def run_game(screen, game):
     while game.state == config.STATE_PLAYING:
         clock.tick(config.FPS)
         for event in pygame.event.get():
+            audio.handle_event(event)
             if event.type == pygame.QUIT:
                 return "quit"
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:

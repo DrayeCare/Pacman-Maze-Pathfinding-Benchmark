@@ -37,28 +37,30 @@ import sys
 import pygame
 
 from core import config
+from core import audio
+from tampilan import theme
 
 FPS = getattr(config, "FPS", 60)
 
 # ---------------------------------------------------------------------------
 # Warna
 # ---------------------------------------------------------------------------
-C_BG = (8, 8, 20)
-C_WIN = (80, 220, 120)
-C_LOSE = (255, 100, 100)
-C_REASON = (210, 210, 226)
-C_INFO = (154, 154, 184)
-C_LABEL = (200, 200, 200)
-C_VALUE = (110, 220, 255)
-C_UNIT = (190, 190, 190)
-C_TEXT = (235, 235, 245)
-C_CARD = (30, 30, 48)
-C_BORDER = (240, 240, 250)
-C_ICON_BG = (42, 42, 62)
-C_ICON_BORDER = (140, 140, 170)
-C_BTN_PLAY = (40, 125, 60)
-C_BTN_MENU = (42, 42, 62)
-C_HINT = (154, 154, 184)
+C_BG = theme.BG_DEEP
+C_WIN = theme.SUCCESS
+C_LOSE = theme.DANGER
+C_REASON = theme.TEXT_MUTED
+C_INFO = theme.TEXT_MUTED
+C_LABEL = theme.TEXT_MUTED
+C_VALUE = theme.BFS
+C_UNIT = theme.TEXT_MUTED
+C_TEXT = theme.TEXT
+C_CARD = theme.SURFACE
+C_BORDER = theme.BORDER
+C_ICON_BG = theme.SURFACE_2
+C_ICON_BORDER = theme.BORDER
+C_BTN_PLAY = theme.SUCCESS
+C_BTN_MENU = theme.SURFACE_2
+C_HINT = theme.TEXT_MUTED
 
 MAZE_NAMES = {1: "Mudah", 2: "Sedang", 3: "Sulit"}
 ALGO_NAMES = {"bfs": "BFS", "astar": "A*"}
@@ -90,14 +92,8 @@ def _info_line(info):
 # ---------------------------------------------------------------------------
 # Helper gambar
 # ---------------------------------------------------------------------------
-_fonts = {}
-
-
 def _font(size, bold=False):
-    key = (max(int(size), 8), bold)
-    if key not in _fonts:
-        _fonts[key] = pygame.font.SysFont("consolas", key[0], bold=bold)
-    return _fonts[key]
+    return theme.font(size, bold)
 
 
 def _text(screen, msg, size, color, center, bold=False):
@@ -224,7 +220,7 @@ def show_hasil(screen=None, winner="pacman", stats=None, info=None):
     pygame.display.set_caption("Pac-Man AI: BFS vs A*")
     w, h = screen.get_size()
     clock = pygame.time.Clock()
-    s = min(h / 720, w / 1280)  # skala layout (acuan 1280 x 720)
+    s = min(h / 720.0, w / 1280.0)  # skala layout dibatasi viewport
     cx = w // 2
 
     stats = stats or {}
@@ -278,6 +274,7 @@ def show_hasil(screen=None, winner="pacman", stats=None, info=None):
 
     while True:
         for event in pygame.event.get():
+            audio.handle_event(event)
             if event.type == pygame.QUIT:
                 return "quit"
             if event.type == pygame.KEYDOWN:

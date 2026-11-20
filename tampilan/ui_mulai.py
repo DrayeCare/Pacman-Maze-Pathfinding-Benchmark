@@ -2,41 +2,40 @@ import json
 import math
 import pygame
 from core import config
+from core import audio
+from tampilan import theme
 
 FPS = getattr(config, "FPS", 60)
 
-# --- PALET WARNA SESUAI RANCANGAN ---
-C_BG = (11, 11, 24)
-C_TITLE = (255, 255, 255)
-C_LABEL = (210, 210, 220)
-C_ENEMY_LABEL = (235, 115, 125)  # Merah muda pudar ("ALGORITMA MUSUH")
-C_COND_LABEL = (95, 195, 245)    # Biru muda ("GAME CONDITION")
-C_TEXT = (240, 240, 248)
-C_SUBTEXT = (205, 205, 220)
+# Warna dari design tokens (tampilan/theme.py)
+C_BG = theme.BG_DEEP
+C_TITLE = theme.TEXT
+C_LABEL = theme.TEXT_MUTED
+C_ENEMY_LABEL = theme.ASTAR
+C_COND_LABEL = theme.BFS
+C_TEXT = theme.TEXT
+C_SUBTEXT = theme.TEXT_MUTED
 
-C_CARD = (26, 26, 38)
-C_BTN = (38, 38, 56)
-C_BORDER = (115, 115, 135)
+C_CARD = theme.SURFACE
+C_BTN = theme.SURFACE_2
+C_BORDER = theme.BORDER
 
-# Warna Aktif (Dipilih)
-C_MAZE_ACTIVE_FILL = (86, 62, 128)      # Ungu Map Aktif
-C_MAZE_ACTIVE_BORDER = (185, 145, 235)
+# Satu aksen "terpilih" untuk map & kondisi
+C_MAZE_ACTIVE_FILL = theme.BFS
+C_MAZE_ACTIVE_BORDER = theme.lighten(theme.BFS, 45)
+C_ENEMY_ACTIVE_FILL = theme.SURFACE_2
+C_ENEMY_ACTIVE_BORDER = theme.BORDER
+C_COND_ACTIVE_FILL = theme.BFS
+C_COND_ACTIVE_BORDER = theme.lighten(theme.BFS, 45)
 
-C_ENEMY_ACTIVE_FILL = (128, 42, 52)     # Merah Algoritma Aktif
-C_ENEMY_ACTIVE_BORDER = (225, 85, 95)
+C_BACK_FILL = theme.SURFACE_2
+C_START_FILL = theme.SUCCESS
 
-C_COND_ACTIVE_FILL = (28, 70, 125)      # Biru Game Condition Aktif
-C_COND_ACTIVE_BORDER = (75, 180, 255)
-
-C_BACK_FILL = (72, 46, 108)
-C_START_FILL = (46, 130, 66)
-
-# Warna Elemen Maze
-C_WALL = (34, 34, 221)
-C_PATH = (0, 0, 0)
-C_EXIT = (0, 200, 0)
-C_PACMAN = (255, 220, 0)
-C_GHOST = (255, 0, 0)
+C_WALL = theme.WALL
+C_PATH = theme.PATH
+C_EXIT = theme.EXIT
+C_PACMAN = theme.PACMAN
+C_GHOST = theme.GHOST_RED
 
 # Teks 2 baris untuk masing-masing Map sesuai rancangan PDF
 MAP_CAPTIONS = {
@@ -49,14 +48,8 @@ MAP_OPTIONS = [(mid, MAP_CAPTIONS[mid]) for mid in (1, 2, 3)]
 ALGO_OPTIONS = [("bfs", "BFS"), ("astar", "A*")]
 COND_OPTIONS = [("diam", "Pac-Man Diam"), ("bergerak", "Pac-Man Bergerak")]
 
-_fonts = {}
-
-
 def _font(size, bold=False):
-    key = (max(int(size), 8), bold)
-    if key not in _fonts:
-        _fonts[key] = pygame.font.SysFont("consolas", key[0], bold=bold)
-    return _fonts[key]
+    return theme.font(size, bold)
 
 
 def _text(screen, msg, size, color, center, bold=False):
@@ -304,7 +297,7 @@ def show_mulai(screen=None):
     pygame.display.set_caption("Pac-Man AI: BFS vs A*")
     w, h = screen.get_size()
     clock = pygame.time.Clock()
-    s = h / 850.0  # Skala referensi vertikal
+    s = min(h / 850.0, w / 1400.0)  # Skala dibatasi viewport agar layout tetap muat
 
     sel = {"maze": 1, "algorithm": "bfs", "condition": "diam"}
 
@@ -396,6 +389,7 @@ def show_mulai(screen=None):
 
     while True:
         for event in pygame.event.get():
+            audio.handle_event(event)
             if event.type == pygame.QUIT:
                 return "quit"
             if event.type == pygame.KEYDOWN:
@@ -442,7 +436,10 @@ def show_mulai(screen=None):
         _text(screen, "ALGORITMA MUSUH", int(18 * s), C_ENEMY_LABEL, (w // 2, int(h * 0.52)), bold=True)
         for b in algo_btns:
             if sel["algorithm"] == b.value:
-                b.draw(screen, fill=C_ENEMY_ACTIVE_FILL, border=C_ENEMY_ACTIVE_BORDER, border_w=3)
+                identitas = theme.warna_algoritma(b.value)
+                b.draw(screen, fill=identitas,
+                       border=theme.lighten(identitas, 50), border_w=3,
+                       text_color=theme.BG_DEEP)
             else:
                 b.draw(screen, fill=C_BTN, border=C_BORDER, border_w=2)
 
