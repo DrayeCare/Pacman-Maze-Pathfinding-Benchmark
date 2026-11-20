@@ -1,5 +1,7 @@
 import json
 import math
+import os
+import random
 from collections import deque
 
 import pygame
@@ -10,8 +12,10 @@ from core import config
 from core import audio
 from tampilan import theme
 from tampilan.ui_setting import get_movement_keys
-from tampilan.visual import (gambar_exit, gambar_ghost, gambar_hud,
-                             gambar_maze, gambar_pacman, gambar_path_aktif,
+from tampilan.visual import (gambar_biaya, gambar_exit, gambar_ghost,
+                             gambar_hud, gambar_label_algoritma,
+                             gambar_label_algoritma_gabungan, gambar_maze,
+                             gambar_pacman, gambar_path_aktif, gambar_visited,
                              hitung_layout, pusat_tile)
 
 SEARCH = {"bfs": cari_jalur_bfs, "astar": cari_jalur_astar}
@@ -67,19 +71,21 @@ def _terdekat_manhattan(target, tersedia):
     return min(tersedia, key=lambda t: (abs(t[0] - target[0]) + abs(t[1] - target[1]), t))
 
 
-def _pilih_spawn(grid):
-    """Pilih Player, Ghost, dan Exit secara deterministik memakai BFS.
+def _pilih_spawn(grid, jumlah_hantu=1):
+    """Pilih Player, daftar Ghost, dan Exit secara deterministik memakai BFS.
 
     Player dan Exit memakai pasangan sudut dengan jarak jalur terjauh. Ghost
-    dipilih dari sel walkable yang memaksimalkan jarak shortest-path ke Player,
-    lalu jumlah persimpangan pada rute, lalu jarak ke Exit. Tie-break selalu
-    berdasarkan koordinat agar reproducible.
+    pertama dipilih dari sel walkable yang memaksimalkan jarak shortest-path
+    ke Player, lalu jumlah persimpangan pada rute, lalu jarak ke Exit. Ghost
+    berikutnya dijauhkan secara BFS dari Player maupun ghost lainnya.
+    Tie-break selalu berdasarkan koordinat agar reproducible.
     """
+    jumlah_hantu = max(1, int(jumlah_hantu))
     baris, kolom = len(grid), len(grid[0])
     valid = [(r, c) for r in range(baris) for c in range(kolom)
              if grid[r][c] != 1]
     if not valid:
-        return [0, 0], [0, 0], [0, 0]
+        return [0, 0], [[0, 0] for _ in range(jumlah_hantu)], [0, 0]
 
     sudut = [(0, 0), (0, kolom - 1), (baris - 1, 0), (baris - 1, kolom - 1)]
     jangkar = []
@@ -117,7 +123,7 @@ def _pilih_spawn(grid):
         kumpulan = [t for t in valid if t != p and t != e]
     if not kumpulan:
         cadangan = valid[0] if valid[0] != p else (valid[1] if len(valid) > 1 else p)
-        return list(p), list(cadangan), list(e)
+        return list(p), [list(cadangan) for _ in range(jumlah_hantu)], list(e)
 
     jauh = [t for t in kumpulan if dp[t] >= SPAWN_MIN_TARGET]
     if jauh:
@@ -133,34 +139,294 @@ def _pilih_spawn(grid):
         return (-_persimpangan(grid, induk_p, t), -de.get(t, 0), t[0], t[1])
 
     h = min(terbaik, key=skor)
-    return list(p), list(h), list(e)
+    daftar_hantu = [list(h)]
+
+    for _ in range(jumlah_hantu - 1):
+        peta_hantu = [_peta_spawn(grid, tuple(g))[0] for g in daftar_hantu]
+        calon = [t for t in kumpulan
+                 if t not in (p, e) and t not in daftar_hantu
+                 and t in dp and all(t in ph for ph in peta_hantu)]
+        if not calon:
+            calon = [t for t in valid
+                     if t not in (p, e) and t not in daftar_hantu]
+        if not calon:
+            calon = [t for t in valid if t not in daftar_hantu]
+        if not calon:
+            calon = list(valid)
+
+        def skor_berikutnya(t):
+            jarak_min = min(ph.get(t, 0) for ph in peta_hantu)
+            return (-jarak_min, -_derajat(grid, t[0], t[1]), t[0], t[1])
+
+        daftar_hantu.append(list(min(calon, key=skor_berikutnya)))
+
+    return list(p), daftar_hantu, list(e)
+
+
+# ---------------------------------------------------------------------------
+# Pengaturan spawn: mode "auto" (deterministik), "random", atau "manual".
+# Dibaca dari settings.json blok "spawn" tanpa mengubah kunci "controls".
+# ---------------------------------------------------------------------------
+SETTINGS_PATH = os.path.join(config.BASE_DIR, "settings.json")
+
+
+def _baca_pengaturan_spawn():
+    try:
+        with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+            isi = json.load(f)
+        val = isi.get("spawn", {})
+        return val if isinstance(val, dict) else {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def _koordinat_valid(grid, nilai):
+    if not isinstance(nilai, (list, tuple)) or len(nilai) < 2:
+        return None
+    try:
+        r, c = int(nilai[0]), int(nilai[1])
+    except (TypeError, ValueError):
+        return None
+    if (0 <= r < len(grid) and 0 <= c < len(grid[0])
+            and grid[r][c] != 1):
+        return (r, c)
+    return None
+
+
+def _spawn_acak(grid, jumlah, rng=None):
+    """Spawn acak yang tetap valid, saling terjangkau, dan tidak berdekatan."""
+    rng = rng or random.Random()
+    valid = [(r, c) for r in range(len(grid))
+             for c in range(len(grid[0])) if grid[r][c] != 1]
+    if len(valid) < jumlah + 2:
+        return None
+
+    for _ in range(200):
+        pilihan = rng.sample(valid, jumlah + 2)
+        p, e = pilihan[0], pilihan[-1]
+        daftar = pilihan[1:-1]
+        dp = _peta_spawn(grid, p)[0]
+        if e not in dp or any(g not in dp for g in daftar):
+            continue
+        if dp[e] < 10 or min(dp[g] for g in daftar) < 8:
+            continue
+        if any(_peta_spawn(grid, g)[0].get(h, 0) < 4
+               for g in daftar for h in daftar if g != h):
+            continue
+        return list(p), [list(g) for g in daftar], list(e)
+    return None
+
+
+def _spawn_manual(grid, jumlah, pengaturan):
+    """Pakai koordinat settings.json; bagian invalid jatuh ke spawn otomatis."""
+    p, hantu_otomatis, e = _pilih_spawn(grid, jumlah)
+    p_manual = _koordinat_valid(grid, pengaturan.get("pacman"))
+    e_manual = _koordinat_valid(grid, pengaturan.get("exit"))
+    if p_manual is not None and p_manual == e_manual:
+        print("[spawn] pacman dan exit sama; Pac-Man memakai posisi otomatis.")
+        p_manual = None
+    if p_manual is not None:
+        p = list(p_manual)
+    if e_manual is not None:
+        e = list(e_manual)
+
+    ghosts_manual = pengaturan.get("ghosts", [])
+    if not isinstance(ghosts_manual, (list, tuple)):
+        ghosts_manual = []
+    terpakai = {tuple(p), tuple(e)}
+    cadangan = [(r, c) for r in range(len(grid))
+                for c in range(len(grid[0])) if grid[r][c] != 1]
+    daftar = []
+    for i in range(jumlah):
+        calon = (_koordinat_valid(grid, ghosts_manual[i])
+                 if i < len(ghosts_manual) else None)
+        if calon is None or calon in terpakai:
+            calon = (_koordinat_valid(grid, hantu_otomatis[i])
+                     if i < len(hantu_otomatis) else None)
+        if calon is None or calon in terpakai:
+            calon = next((t for t in cadangan if t not in terpakai), None)
+        if calon is None:
+            calon = tuple(p)
+        daftar.append(list(calon))
+        terpakai.add(calon)
+    return p, daftar, e
+
+
+def tentukan_spawn(grid, jumlah_hantu=1, pengaturan=None):
+    """Entrypoint spawn: auto / random / manual dari settings.json."""
+    jumlah = max(1, int(jumlah_hantu))
+    pengaturan = pengaturan if isinstance(pengaturan, dict) else _baca_pengaturan_spawn()
+    mode = str(pengaturan.get("mode", "auto")).strip().lower()
+    if mode == "manual":
+        return _spawn_manual(grid, jumlah, pengaturan)
+    if mode == "random":
+        hasil = _spawn_acak(grid, jumlah)
+        if hasil is not None:
+            return hasil
+        print("[spawn] Gagal membuat spawn acak; memakai spawn otomatis.")
+    return _pilih_spawn(grid, jumlah)
+
+
+def simpan_pengaturan_spawn(pengaturan):
+    """Simpan blok spawn ke settings.json tanpa menghapus kunci lain."""
+    if not isinstance(pengaturan, dict):
+        return False
+    isi = {}
+    try:
+        with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+            isi = json.load(f)
+        if not isinstance(isi, dict):
+            isi = {}
+    except (OSError, ValueError):
+        isi = {}
+    isi["spawn"] = pengaturan
+    try:
+        with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(isi, f)
+        return True
+    except OSError:
+        return False
+
+
+def muat_mode_ghost():
+    """Mode spawn ghost duel: 'sama' (default) atau 'pisah'."""
+    pengaturan = _baca_pengaturan_spawn()
+    mode = str(pengaturan.get("ghost_mode", "sama")).strip().lower()
+    return "pisah" if mode in ("pisah", "separate", "terpisah", "dua") else "sama"
+
+
+def _normalisasi_biaya(nilai):
+    """Terima dict {(r,c):v} atau list [[r,c,v], ...]; buang biaya <= 1."""
+    hasil = {}
+    if isinstance(nilai, dict):
+        for kunci, v in nilai.items():
+            try:
+                if isinstance(kunci, (list, tuple)) and len(kunci) >= 2:
+                    r, c = int(kunci[0]), int(kunci[1])
+                else:
+                    continue
+                v = int(v)
+            except (TypeError, ValueError):
+                continue
+            if v > 1:
+                hasil[(r, c)] = v
+    elif isinstance(nilai, (list, tuple)):
+        for item in nilai:
+            try:
+                if not isinstance(item, (list, tuple)) or len(item) < 3:
+                    continue
+                r, c, v = int(item[0]), int(item[1]), int(item[2])
+            except (TypeError, ValueError):
+                continue
+            if v > 1:
+                hasil[(r, c)] = v
+    return hasil
+
+
+def muat_biaya():
+    """Baca biaya petak dari settings.json (blok 'costs')."""
+    try:
+        with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+            isi = json.load(f)
+        if not isinstance(isi, dict):
+            return {}
+        return _normalisasi_biaya(isi.get("costs"))
+    except (OSError, ValueError):
+        return {}
+
+
+def simpan_biaya(biaya):
+    """Simpan biaya petak tanpa menghapus kunci settings lain."""
+    isi = {}
+    try:
+        with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+            isi = json.load(f)
+        if not isinstance(isi, dict):
+            isi = {}
+    except (OSError, ValueError):
+        isi = {}
+    isi["costs"] = [[r, c, v] for (r, c), v in sorted(_normalisasi_biaya(biaya).items())]
+    try:
+        with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(isi, f)
+        return True
+    except OSError:
+        return False
+
+
+class GhostAgent:
+    """Satu ghost dengan algoritma, posisi, jalur, dan metriknya sendiri."""
+
+    def __init__(self, algorithm, pos, last_move_time=0.0):
+        self.algorithm = algorithm
+        self.pos = list(pos)
+        self.search_func = SEARCH.get(algorithm, cari_jalur_astar)
+        self.path = []
+        self.visited = []
+        self.total_nodes = 0
+        self.total_time = 0.0
+        self.search_count = 0
+        self.last_path_length = 0
+        self.last_move_time = float(last_move_time)
+
+    @property
+    def stats(self):
+        n = max(self.search_count, 1)
+        return {
+            "search_time_ms": (self.total_time / n) * 1000,
+            "nodes_explored": int(self.total_nodes / n),
+            "path_length": self.last_path_length,
+        }
 
 
 class Game:
-    def __init__(self, maze_path, algorithm="astar", condition="diam"):
-        self.algorithm = algorithm.lower()
-        self.condition = condition  
-        self.search_func = SEARCH.get(self.algorithm, cari_jalur_astar)
-        
+    def __init__(self, maze_path, algorithm="astar", condition="diam",
+                 spawn_settings=None, start_delay=None, costs=None):
+        self.algorithm = str(algorithm).lower()
+        self.is_duel = self.algorithm in ("duel", "both", "keduanya", "bfs+astar", "bfs+astar+search")
+        self.algorithms = ("bfs", "astar") if self.is_duel else (self.algorithm,)
+        self.condition = condition
+        self.search_func = SEARCH.get(self.algorithms[0], cari_jalur_astar)
+
         with open(maze_path, "r") as f:
             self.maze_data = json.load(f)
 
         self.grid = self.maze_data["grid"]
-        self.pacman_pos, self.ghost_pos, self.exit_pos = _pilih_spawn(self.grid)
+        if costs is None:
+            if isinstance(spawn_settings, dict) and "costs" in spawn_settings:
+                costs = spawn_settings.get("costs")
+            else:
+                costs = muat_biaya()
+        self.costs = _normalisasi_biaya(costs)
+        now = pygame.time.get_ticks()
+        # Satu titik saat mode "sama", dua titik saat mode "pisah".
+        mode_ghost = "sama"
+        if isinstance(spawn_settings, dict):
+            mode_ghost = str(spawn_settings.get("ghost_mode", "sama")).strip().lower()
+        self.ghost_mode = ("pisah" if mode_ghost in ("pisah", "separate", "terpisah", "dua")
+                           else "sama")
+        jumlah_spawn = 2 if (self.is_duel and self.ghost_mode == "pisah") else 1
+        (self.pacman_pos, posisi_hantu,
+         self.exit_pos) = tentukan_spawn(self.grid, jumlah_spawn, spawn_settings)
+        if jumlah_spawn == 1:
+            posisi_hantu = [posisi_hantu[0]] * len(self.algorithms)
+        self.ghosts = [GhostAgent(algo, pos, now)
+                       for algo, pos in zip(self.algorithms, posisi_hantu)]
 
-        self.state = config.STATE_PLAYING 
-        self.ghost_last_move_time = pygame.time.get_ticks()
-        self.pacman_last_move_time = pygame.time.get_ticks()
+        self.state = config.STATE_PLAYING
+        self.ghost_last_move_time = now
+        self.pacman_last_move_time = now
         self.pacman_move_delay = config.PACMAN_MOVE_DELAY
+        self.pacman_interval_aktif = self.pacman_move_delay * 1000
 
-        self.total_nodes = 0
-        self.total_time = 0.0
-        self.search_count = 0
+        self.start_delay = float(config.START_DELAY_SECONDS if start_delay is None
+                                 else start_delay)
+        self.started_at = now
+        self.jeda_selesai = self.start_delay <= 0
+
         self.pacman_total_nodes = 0
         self.pacman_total_time = 0.0
         self.pacman_search_count = 0
-        self.last_path_length = 0
-        self.current_path = []
         self.exit_path = []
         self.buffered_dir = None
         self.current_dir = None
@@ -170,7 +436,7 @@ class Game:
             pygame.K_UP: (-1, 0), pygame.K_DOWN: (1, 0), pygame.K_LEFT: (0, -1), pygame.K_RIGHT: (0, 1),
             pygame.K_w: (-1, 0), pygame.K_s: (1, 0), pygame.K_a: (0, -1), pygame.K_d: (0, 1)
         }
-        
+
         try:
             keys = get_movement_keys()
             if isinstance(keys, dict) and "up" in keys:
@@ -184,25 +450,62 @@ class Game:
 
         self.update_ghost_path()
 
-    def update_ghost_path(self):
-        start = tuple(self.ghost_pos)
+    # Kompatibilitas dengan pemanggil lama yang memakai ghost tunggal.
+    @property
+    def ghost_pos(self):
+        return self.ghosts[0].pos
+
+    @property
+    def current_path(self):
+        return self.ghosts[0].path
+
+    @property
+    def total_nodes(self):
+        return sum(g.total_nodes for g in self.ghosts)
+
+    @property
+    def total_time(self):
+        return sum(g.total_time for g in self.ghosts)
+
+    @property
+    def search_count(self):
+        return sum(g.search_count for g in self.ghosts)
+
+    @property
+    def last_path_length(self):
+        return self.ghosts[0].last_path_length
+
+    def _hitung_path(self, ghost):
+        start = tuple(ghost.pos)
         target = tuple(self.pacman_pos)
-        path, nodes, elapsed = self.search_func(self.grid, start, target)
-        
-        self.total_nodes += nodes
-        self.total_time += elapsed
-        self.search_count += 1
-        
-        self.last_path_length = max(len(path) - 1, 0)
-        self.current_path = path[1:] if len(path) > 1 else []
+        hasil = ghost.search_func(self.grid, start, target, self.costs,
+                                  with_visited=True)
+        path, nodes, elapsed = hasil[0], hasil[1], hasil[2]
+        if len(hasil) > 3:
+            ghost.visited = list(hasil[3])
+
+        ghost.total_nodes += nodes
+        ghost.total_time += elapsed
+        ghost.search_count += 1
+        ghost.last_path_length = max(len(path) - 1, 0)
+        ghost.path = list(path[1:]) if len(path) > 1 else []
+
+    def update_ghost_path(self):
+        """Hitung ulang rute semua ghost setelah Pac-Man bergerak."""
+        for ghost in self.ghosts:
+            self._hitung_path(ghost)
 
     def get_stats(self):
-        n = max(self.search_count, 1)
-        return {
-            "search_time_ms": (self.total_time / n) * 1000,
-            "nodes_explored": int(self.total_nodes / n),
-            "path_length": self.last_path_length
-        }
+        """Statistik ghost utama (kompatibel dengan pemanggil lama)."""
+        return dict(self.ghosts[0].stats)
+
+    def get_stats_by_algo(self):
+        """Statistik per algoritma; dipakai mode duel BFS vs A*."""
+        return {g.algorithm: dict(g.stats) for g in self.ghosts}
+
+    def get_all_stats(self):
+        """Daftar statistik lengkap dengan identitas algoritma."""
+        return [dict(g.stats, algorithm=g.algorithm) for g in self.ghosts]
 
     @property
     def winner(self):
@@ -217,14 +520,31 @@ class Game:
     def is_valid_move(self, r, c):
         return (0 <= r < len(self.grid) and 0 <= c < len(self.grid[0]) and self.grid[r][c] != 1)
 
+    def _faktor_kecepatan(self, pos):
+        """Cost petak tujuan = berapa kali jeda gerak dasar (minimal 1)."""
+        try:
+            return max(1, int(self.costs.get((int(pos[0]), int(pos[1])), 1)))
+        except (TypeError, ValueError):
+            return 1
+
     def update(self):
         if self.state != config.STATE_PLAYING:
             return
         now = pygame.time.get_ticks()
 
-        # 1. PERGERAKAN PAC-MAN: hanya saat "bergerak" dan hanya oleh input player
-        if (self.condition == "bergerak"
-                and now - self.pacman_last_move_time >= self.pacman_move_delay * 1000):
+        # Jeda awal: karakter belum bergerak agar posisi awal bisa dilihat.
+        if not self.jeda_selesai:
+            if now - self.started_at < self.start_delay * 1000:
+                return
+            self.jeda_selesai = True
+            self.pacman_last_move_time = now
+            for ghost in self.ghosts:
+                ghost.last_move_time = now
+            return
+
+        # 1. PERGERAKAN PAC-MAN: arah dipilih dulu supaya cost petak tujuan
+        #    ikut menentukan jeda sebelum langkah pertama dieksekusi.
+        if self.condition == "bergerak":
             def bisa(arah):
                 return (arah is not None
                         and self.is_valid_move(self.pacman_pos[0] + arah[0],
@@ -238,10 +558,11 @@ class Game:
                     break
 
             arah = None
+            pakai_buffer = False
             if self.buffered_dir is not None:
                 if bisa(self.buffered_dir):
                     arah = self.buffered_dir
-                    self.buffered_dir = None
+                    pakai_buffer = True
                 elif bisa(held_dir):
                     arah = held_dir
                 elif bisa(self.current_dir):
@@ -250,32 +571,63 @@ class Game:
                 arah = held_dir
 
             if arah is not None:
-                self.pacman_pos = [self.pacman_pos[0] + arah[0], self.pacman_pos[1] + arah[1]]
-                self.current_dir = arah
-                interval_ms = self.pacman_move_delay * 1000
-                if now - self.pacman_last_move_time >= 2 * interval_ms:
-                    self.pacman_last_move_time = now
-                else:
-                    self.pacman_last_move_time += interval_ms
-                self.update_ghost_path()
-                self.check_game_conditions()
+                tujuan = (self.pacman_pos[0] + arah[0],
+                          self.pacman_pos[1] + arah[1])
+                faktor = self._faktor_kecepatan(tujuan)
+                interval_ms = self.pacman_move_delay * faktor * 1000
+                self.pacman_interval_aktif = interval_ms
+                if now - self.pacman_last_move_time >= interval_ms:
+                    if pakai_buffer:
+                        self.buffered_dir = None
+                    self.pacman_pos = [tujuan[0], tujuan[1]]
+                    self.current_dir = arah
+                    if now - self.pacman_last_move_time >= 2 * interval_ms:
+                        self.pacman_last_move_time = now
+                    else:
+                        self.pacman_last_move_time += interval_ms
+                    self.update_ghost_path()
+                    self.check_game_conditions()
 
-        # 2. PERGERAKAN GHOST
-        if now - self.ghost_last_move_time >= config.GHOST_MOVE_DELAY * 1000:
-            interval_ms = config.GHOST_MOVE_DELAY * 1000
-            if now - self.ghost_last_move_time >= 2 * interval_ms:
-                self.ghost_last_move_time = now
+        # 2. PERGERAKAN SETIAP GHOST (BFS dan/atau A* memakai timer sendiri)
+        for ghost in self.ghosts:
+            # Jeda mengikuti cost petak yang akan dimasuki ghost ini.
+            langkah = ghost.path[0] if ghost.path else None
+            faktor = self._faktor_kecepatan(langkah) if langkah else 1
+            interval_ms = config.GHOST_MOVE_DELAY * faktor * 1000
+            if now - ghost.last_move_time < interval_ms:
+                continue
+            if now - ghost.last_move_time >= 2 * interval_ms:
+                ghost.last_move_time = now
             else:
-                self.ghost_last_move_time += interval_ms
-            if self.current_path:
-                self.ghost_pos = list(self.current_path.pop(0))
-                self.check_game_conditions()
+                ghost.last_move_time += interval_ms
+            if ghost.path:
+                ghost.pos = list(ghost.path.pop(0))
+            else:
+                self._hitung_path(ghost)  # target sudah tercapai: cari ulang
+                if ghost.path:
+                    ghost.pos = list(ghost.path.pop(0))
+            self.check_game_conditions()
+            if self.state != config.STATE_PLAYING:
+                break
 
     def check_game_conditions(self):
         if self.pacman_pos == self.exit_pos:
             self.state = config.STATE_WIN
-        elif self.pacman_pos == self.ghost_pos:
+        elif any(list(g.pos) == self.pacman_pos for g in self.ghosts):
             self.state = config.STATE_LOSE
+
+    def _gambar_jeda(self, screen, layout, sisa):
+        """Penanda jeda di area HUD; maze tetap terlihat penuh."""
+        rect = layout["hud_rect"]
+        if rect.width <= 0 or rect.height <= 0:
+            return
+        lapis = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        lapis.fill((7, 10, 24, 220))
+        screen.blit(lapis, rect.topleft)
+        pygame.draw.rect(screen, theme.BORDER, rect, 2)
+        theme.fit_text(screen, "MULAI DALAM {0:.1f} DETIK".format(sisa),
+                       rect.center, rect.width - 12,
+                       max(11, min(18, rect.height // 3)), theme.TEXT, bold=True)
 
     def render(self, screen):
         """Render murni visual. Tidak mengubah posisi, state, atau metrik."""
@@ -283,13 +635,14 @@ class Game:
         screen.fill(config.COLOR_BG)
 
         gambar_maze(screen, layout, self.grid)
-        # Path aktif adalah keluaran nyata algoritma (self.current_path).
-        # Tidak menggambar visited/frontier karena tidak dikembalikan algoritma.
-        # Sertakan posisi Ghost sekarang agar garis menyambung ke sprite.
-        # Ini tetap data nyata: ghost_pos + sisa path dari algoritma.
-        path_tampil = ([list(self.ghost_pos)] + self.current_path) if self.current_path else []
-        gambar_path_aktif(screen, layout, path_tampil,
-                          theme.warna_algoritma(self.algorithm))
+        # Biru = semua sel yang dieksplorasi (termasuk cabang jalan buntu).
+        # Kuning = jalur solusi akhir dari ghost ke Pac-Man.
+        for ghost in self.ghosts:
+            gambar_visited(screen, layout, ghost.visited, theme.BFS)
+        for ghost in self.ghosts:
+            path_tampil = ([list(ghost.pos)] + ghost.path) if ghost.path else []
+            gambar_path_aktif(screen, layout, path_tampil, theme.PACMAN)
+        gambar_biaya(screen, layout, self.costs)
         gambar_exit(screen, layout, self.exit_pos)
 
         now = pygame.time.get_ticks()
@@ -307,19 +660,43 @@ class Game:
                       mouth_deg=int(mulut), color=theme.PACMAN,
                       bg=theme.PATH, eye=True)
 
-        # Ghost: arah diambil dari langkah berikutnya pada path yang sudah ada.
-        if self.current_path:
-            nr, nc = self.current_path[0]
-            arah_ghost = (nr - self.ghost_pos[0], nc - self.ghost_pos[1])
-        else:
-            arah_ghost = (self.pacman_pos[0] - self.ghost_pos[0],
-                          self.pacman_pos[1] - self.ghost_pos[1])
-        gx, gy = pusat_tile(layout, self.ghost_pos[0], self.ghost_pos[1])
-        bob = math.sin(now / 130.0) * max(1, radius * 0.06)
-        gambar_ghost(screen, (gx, gy), radius, arah_ghost,
-                     color=theme.GHOST_RED, bob=bob)
+        # Ghost: arah diambil dari langkah berikutnya pada path masing-masing.
+        for ghost in self.ghosts:
+            if ghost.path:
+                nr, nc = ghost.path[0]
+                arah_ghost = (nr - ghost.pos[0], nc - ghost.pos[1])
+            else:
+                arah_ghost = (self.pacman_pos[0] - ghost.pos[0],
+                              self.pacman_pos[1] - ghost.pos[1])
+            gx, gy = pusat_tile(layout, ghost.pos[0], ghost.pos[1])
+            bob = math.sin(now / 130.0) * max(1, radius * 0.06)
+            warna_ghost = (theme.warna_algoritma(ghost.algorithm) if self.is_duel
+                           else theme.GHOST_RED)
+            gambar_ghost(screen, (gx, gy), radius, arah_ghost,
+                         color=warna_ghost, bob=bob)
+
+        if self.is_duel:
+            # Nama algoritma ditulis penuh. Jika ghost masih bertumpuk,
+            # tampilkan satu label "BFS / A*"; setelah berpisah, masing-masing
+            # ghost membawa labelnya sendiri.
+            skala = max(0.8, min(1.4, layout["tile"] / 30.0))
+            if list(self.ghosts[0].pos) == list(self.ghosts[1].pos):
+                gx, gy = pusat_tile(layout, self.ghosts[0].pos[0],
+                                    self.ghosts[0].pos[1])
+                gambar_label_algoritma_gabungan(
+                    screen, (gx, gy - radius - 12), skala)
+            else:
+                for ghost in self.ghosts:
+                    gx, gy = pusat_tile(layout, ghost.pos[0], ghost.pos[1])
+                    gambar_label_algoritma(
+                        screen, (gx, gy - radius - 10),
+                        theme.label_algoritma(ghost.algorithm),
+                        theme.warna_algoritma(ghost.algorithm), skala)
 
         gambar_hud(screen, layout, self)
+        if not self.jeda_selesai:
+            sisa = max(0.0, self.start_delay - (now - self.started_at) / 1000.0)
+            self._gambar_jeda(screen, layout, sisa)
 
 
 # FUNGSI YANG HILANG TADI, SEKARANG SUDAH DIKEMBALIKAN

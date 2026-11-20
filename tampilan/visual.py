@@ -153,12 +153,27 @@ def gambar_exit(surface, layout, pos, color=None):
                          border_radius=max(1, t // 8))
 
 
+def gambar_grid(surface, layout, grid):
+    """Kotak grid tipis pada setiap sel koridor (tidak mengubah geometri)."""
+    t = layout["tile"]
+    if t < 8:
+        return
+    ox, oy = layout["origin_x"], layout["origin_y"]
+    for r in range(len(grid)):
+        for c in range(len(grid[0])):
+            if grid[r][c] == 1:
+                continue
+            x, y = ox + c * t, oy + r * t
+            pygame.draw.rect(surface, theme.GRID, (x, y, t, t), 1)
+
+
 def gambar_maze(surface, layout, grid):
-    """Maze solid beveled: dinding slate-blue padat dengan depth ringan.
+    """Maze solid beveled + grid koridor.
 
     Geometri dan ukuran tile tidak diubah, sehingga overlay jalur BFS/A*
     tetap sejajar persis dengan sel maze. Bevel hanya pada sisi yang
     berbatasan dengan koridor atau tepi luar, agar tekstur tetap bersih.
+    Grid digambar paling atas pada sel koridor sebagai kotak-kotak tipis.
     """
     t = layout["tile"]
     if t <= 0:
@@ -196,6 +211,9 @@ def gambar_maze(surface, layout, grid):
                 pygame.draw.rect(surface, theme.WALL_BEVEL_DARK,
                                  (x + t - tebal, y, tebal, t))
 
+    # Grid koridor: kotak-kotak tipis mengikuti tile yang sama dengan maze.
+    gambar_grid(surface, layout, grid)
+
 
 # ---------------------------------------------------------------------------
 # VISUALISASI PATH — data nyata dari Game.current_path, tanpa data baru
@@ -223,6 +241,99 @@ def gambar_path_aktif(surface, layout, path, warna, alpha=105):
 
 
 # ---------------------------------------------------------------------------
+# VISITED / EXPLORED — sel yang benar-benar dibuka oleh algoritma (biru)
+# ---------------------------------------------------------------------------
+def gambar_visited(surface, layout, visited, warna=None, alpha=80):
+    """Tampilkan area eksplorasi, termasuk cabang yang berujung jalan buntu."""
+    if not visited:
+        return
+    t = layout["tile"]
+    if t <= 0:
+        return
+    dasar = tuple((warna or theme.BFS)[:3])
+    lapis = pygame.Surface((layout["maze_w"], layout["maze_h"]), pygame.SRCALPHA)
+    for r, c in visited:
+        x, y = int(c) * t, int(r) * t
+        rect = (x + 1, y + 1, max(1, t - 2), max(1, t - 2))
+        pygame.draw.rect(lapis, dasar + (alpha,), rect,
+                         border_radius=max(2, t // 6))
+        pygame.draw.rect(lapis, theme.lighten(dasar, 45) + (min(255, alpha + 60),),
+                         rect, 1, border_radius=max(2, t // 6))
+        pygame.draw.circle(lapis, theme.lighten(dasar, 70) + (min(255, alpha + 80),),
+                           (x + t // 2, y + t // 2), max(2, t // 7))
+    surface.blit(lapis, (layout["origin_x"], layout["origin_y"]))
+
+
+# ---------------------------------------------------------------------------
+# BIAYA PETAK — angka kecil di sudut kanan bawah sel yang diberi biaya
+# ---------------------------------------------------------------------------
+def gambar_biaya(surface, layout, costs):
+    if not costs:
+        return
+    t = layout["tile"]
+    if t < 10:
+        return
+    font = theme.font(max(8, min(12, int(t * 0.36))), bold=True)
+    for (r, c), nilai in costs.items():
+        x, y = posisi_tile(layout, r, c)
+        teks = str(int(nilai))
+        w, h = font.size(teks)
+        rect = pygame.Rect(x + t - w - 4, y + t - h - 4, w + 4, h + 4)
+        pygame.draw.rect(surface, theme.BG_DEEP, rect,
+                         border_radius=max(2, rect.height // 3))
+        pygame.draw.rect(surface, theme.ASTAR, rect, 1,
+                         border_radius=max(2, rect.height // 3))
+        surface.blit(font.render(teks, True, theme.ASTAR),
+                     (rect.left + 2, rect.top + 2))
+
+
+# ---------------------------------------------------------------------------
+# LABEL IDENTITAS GHOST — nama algoritma ditulis penuh di dekat sprite
+# ---------------------------------------------------------------------------
+def _font_label(skala):
+    return theme.font(max(9, int(11 * skala)), bold=True)
+
+
+def gambar_label_algoritma(surface, center, label, warna, skala=1.0):
+    """Label 'BFS' atau 'A*' dengan latar gelap dan tepi warna algoritma."""
+    font = _font_label(skala)
+    teks = str(label)
+    w, h = font.size(teks)
+    rect = pygame.Rect(int(center[0] - w / 2 - 5), int(center[1] - h / 2 - 3),
+                       w + 10, h + 6)
+    pygame.draw.rect(surface, theme.BG_DEEP, rect,
+                     border_radius=max(3, rect.height // 2))
+    pygame.draw.rect(surface, warna, rect, 1,
+                     border_radius=max(3, rect.height // 2))
+    surface.blit(font.render(teks, True, warna), (rect.left + 5, rect.top + 3))
+    return rect
+
+
+def gambar_label_algoritma_gabungan(surface, center, skala=1.0):
+    """Label 'BFS / A*' saat kedua ghost berada di petak yang sama."""
+    font = _font_label(skala)
+    wa, ha = font.size("BFS")
+    ws, _ = font.size("/")
+    wb, hb = font.size("A*")
+    jarak = 4
+    lebar = 12 + wa + jarak + ws + jarak + wb
+    tinggi = max(ha, hb) + 6
+    rect = pygame.Rect(int(center[0] - lebar / 2), int(center[1] - tinggi / 2),
+                       lebar, tinggi)
+    pygame.draw.rect(surface, theme.BG_DEEP, rect,
+                     border_radius=max(3, tinggi // 2))
+    pygame.draw.rect(surface, theme.BORDER, rect, 1,
+                     border_radius=max(3, tinggi // 2))
+    x, y = rect.left + 6, rect.top + 3
+    surface.blit(font.render("BFS", True, theme.BFS), (x, y))
+    x += wa + jarak
+    surface.blit(font.render("/", True, theme.TEXT_DIM), (x, y))
+    x += ws + jarak
+    surface.blit(font.render("A*", True, theme.ASTAR), (x, y))
+    return rect
+
+
+# ---------------------------------------------------------------------------
 # HUD
 # ---------------------------------------------------------------------------
 def _stat_tile(surface, rect, label, nilai, warna, s=1.0):
@@ -232,6 +343,33 @@ def _stat_tile(surface, rect, label, nilai, warna, s=1.0):
                    rect.width - int(6 * s), int(10 * s), theme.TEXT_DIM, bold=True)
     theme.fit_text(surface, nilai, (rect.centerx, rect.centery + rect.height * 0.12),
                    rect.width - int(6 * s), int(18 * s), warna, bold=True)
+
+
+def _gambar_hud_duel(surface, rect, game, s):
+    """Dua baris metrik: BFS (cyan) vs A* (amber) dalam satu HUD."""
+    info = "{0} | {1}".format(
+        game.maze_data.get("name", ""),
+        "PAC-MAN BERGERAK" if game.condition == "bergerak" else "PAC-MAN DIAM",
+    )
+    if rect.height >= 66:
+        theme.fit_text(surface, info, (rect.centerx, rect.top + rect.height * 0.20),
+                       rect.width - 12, max(10, int(12 * s)), theme.TEXT_DIM, bold=True)
+        atas = rect.top + rect.height * 0.36
+        jarak = rect.height * 0.30
+    else:
+        atas = rect.top + rect.height * 0.25
+        jarak = rect.height * 0.40
+
+    stats_per_algo = game.get_stats_by_algo()
+    for i, algo in enumerate(("bfs", "astar")):
+        st = stats_per_algo.get(algo, {})
+        teks = "{0}   S {1}   {2:.3f} ms   P {3}".format(
+            theme.label_algoritma(algo), int(st.get("nodes_explored", 0)),
+            float(st.get("search_time_ms", 0.0)), int(st.get("path_length", 0)))
+        warna = theme.warna_algoritma(algo)
+        theme.fit_text(surface, teks,
+                       (rect.centerx, atas + i * jarak),
+                       rect.width - 12, max(10, int(16 * s)), warna, bold=True)
 
 
 def gambar_hud(surface, layout, game):
@@ -247,6 +385,10 @@ def gambar_hud(surface, layout, game):
     nama = game.maze_data.get("name", "")
     kondisi = "PAC-MAN BERGERAK" if game.condition == "bergerak" else "PAC-MAN DIAM"
     s = max(0.55, min(rect.height / HUD_DESIGN_HEIGHT, rect.width / 630.0))
+
+    if getattr(game, "is_duel", False):
+        _gambar_hud_duel(surface, rect, game, s)
+        return
 
     if rect.height < 56:
         theme.fit_text(surface,

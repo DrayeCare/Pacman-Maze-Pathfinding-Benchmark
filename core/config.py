@@ -46,6 +46,9 @@ GHOST_MOVE_EVERY = 1
 PACMAN_MOVE_DELAY = 0.125
 GHOST_MOVE_DELAY = 0.280
 
+# Jeda sebelum karakter mulai bergerak saat game dimulai (detik).
+START_DELAY_SECONDS = 2.0
+
 # ==============================================================================
 # 3. LOGIKA MAZE GRID DAN DIRECTIONS
 # (Sesuai Bab 3.2.2: Pergerakan 4-arah: Atas, Bawah, Kiri, Kanan. Tanpa diagonal)

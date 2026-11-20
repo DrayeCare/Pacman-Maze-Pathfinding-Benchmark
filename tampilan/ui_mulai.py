@@ -45,7 +45,7 @@ MAP_CAPTIONS = {
 }
 
 MAP_OPTIONS = [(mid, MAP_CAPTIONS[mid]) for mid in (1, 2, 3)]
-ALGO_OPTIONS = [("bfs", "BFS"), ("astar", "A*")]
+ALGO_OPTIONS = [("bfs", "BFS"), ("astar", "A*"), ("duel", "BFS + A*")]
 COND_OPTIONS = [("diam", "Pac-Man Diam"), ("bergerak", "Pac-Man Bergerak")]
 
 def _font(size, bold=False):
@@ -337,16 +337,18 @@ def show_mulai(screen=None):
         preview = _build_preview(_load_maze_data(maze_id), side)
         cards.append(MapCard(rect, maze_id, t_line, s_line, preview, title_size, sub_size, pad))
 
-    # --- 2. LAYOUT ALGORITMA MUSUH ---
-    algo_w, algo_h, algo_gap = int(205 * s), int(48 * s), int(22 * s)
-    algo_total = 2 * algo_w + algo_gap
+    # --- 2. LAYOUT ALGORITMA MUSUH (BFS, A*, atau keduanya) ---
+    algo_gap = int(16 * s)
+    algo_w = min(int(200 * s), (w - 2 * algo_gap - int(36 * s)) // 3)
+    algo_h = int(48 * s)
+    algo_total = 3 * algo_w + 2 * algo_gap
     algo_top = int(h * 0.555)
     algo_btns = [
         Button(
             (w // 2 - algo_total // 2 + i * (algo_w + algo_gap), algo_top, algo_w, algo_h),
             label,
             value,
-            int(20 * s),
+            int(20 * s) if value != "duel" else int(16 * s),
             bold=True,
             radius=10,
         )
@@ -400,7 +402,9 @@ def show_mulai(screen=None):
                 if event.key in (pygame.K_1, pygame.K_2, pygame.K_3):
                     sel["maze"] = event.key - pygame.K_0
                 if event.key in (pygame.K_b, pygame.K_TAB):
-                    sel["algorithm"] = "astar" if sel["algorithm"] == "bfs" else "bfs"
+                    nilai = [v for v, _ in ALGO_OPTIONS]
+                    selected_algo = str(sel["algorithm"])
+                    sel["algorithm"] = nilai[(nilai.index(selected_algo) + 1) % len(nilai)]
                 if event.key == pygame.K_c:
                     sel["condition"] = "bergerak" if sel["condition"] == "diam" else "diam"
 
@@ -436,10 +440,14 @@ def show_mulai(screen=None):
         _text(screen, "ALGORITMA MUSUH", int(18 * s), C_ENEMY_LABEL, (w // 2, int(h * 0.52)), bold=True)
         for b in algo_btns:
             if sel["algorithm"] == b.value:
-                identitas = theme.warna_algoritma(b.value)
-                b.draw(screen, fill=identitas,
-                       border=theme.lighten(identitas, 50), border_w=3,
-                       text_color=theme.BG_DEEP)
+                if b.value == "duel":
+                    b.draw(screen, fill=theme.SURFACE_2, border=theme.TEXT,
+                           border_w=3, text_color=theme.TEXT)
+                else:
+                    identitas = theme.warna_algoritma(b.value)
+                    b.draw(screen, fill=identitas,
+                           border=theme.lighten(identitas, 50), border_w=3,
+                           text_color=theme.BG_DEEP)
             else:
                 b.draw(screen, fill=C_BTN, border=C_BORDER, border_w=2)
 

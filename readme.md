@@ -63,6 +63,44 @@ flowchart LR
 3. **Kondisi Menang (*Victory*):** Koordinat Pac-Man berada di titik *exit*.
 4. **Kondisi Kalah (*Defeat*):** Koordinat *Ghost* menempati sel grid yang sama dengan Pac-Man (tertangkap).
 
+### 3. Mode Duel (BFS + A*) dan Pengaturan Spawn
+* Pada layar **PENGATURAN GAME**, pilih **BFS + A*** (tombol ketiga, atau tekan `B` / `Tab` sampai pilihan itu aktif). Akan ada dua ghost sekaligus dalam satu maze: ghost biru memakai BFS, ghost oranye memakai A*. Posisi awal keduanya bisa disamakan atau dipisahkan di editor (lihat poin berikutnya).
+* Mode duel bisa diatur di editor: tombol **GABUNG** / **PISAH** atau kunci **G**. Saat **GABUNG**, BFS dan A* memakai satu titik ghost yang sama dengan label **BFS / A***. Saat **PISAH**, ada dua titik ghost yang bisa diklik sendiri-sendiri: **2** memilih BFS, **4** memilih A*, dan masing-masing memakai label warnanya sendiri.
+* Nama algoritma ditulis penuh di dekat masing-masing ghost: **BFS** (biru) dan **A*** (oranye). Saat keduanya masih bertumpuk di satu petak, labelnya menjadi **BFS / A***; setelah berpisah, tiap ghost membawa labelnya sendiri.
+* Setelah menekan **MULAI GAME**, muncul layar **ATUR POSISI AWAL**. Pilih entitas dengan tombol/kunci `1`=`Pac-Man`, `2`=`Ghost`, `3`=`Exit`, lalu klik petak mana pun yang berupa jalan; entitas lama di petak itu otomatis ditukar. `R` mengembalikan posisi otomatis, `A` mengacak, `ENTER`/`MULAI` memakai posisi tersebut, `ESC` kembali. Pilihan ini disimpan ke `settings.json` dan dipakai juga saat replay.
+* Saat game dimulai ada jeda **2 detik** sebelum karakter bergerak (HUD menampilkan hitung mundur), supaya posisi awal ghost bisa dilihat. Jeda diatur lewat `START_DELAY_SECONDS` di `core/config.py`.
+* Posisi awal juga bisa diatur langsung lewat file `settings.json`, blok `"spawn"`:
+
+```json
+"spawn": {
+  "mode": "auto",
+  "pacman": [18, 19],
+  "ghosts": [[19, 8], [1, 1]],
+  "exit": [4, 1]
+}
+```
+
+| `mode` | Perilaku |
+| :--- | :--- |
+| `"auto"` | Posisi dihitung otomatis secara deterministik memakai BFS (default, hasil konsisten). |
+| `"random"` | Posisi diacak setiap kali game dimulai, tetap di jalan yang saling terjangkau. |
+| `"manual"` | Memakai koordinat `[baris, kolom]` yang ditulis di `pacman`, `ghosts`, dan `exit`. Koordinat yang tidak valid otomatis diganti posisi `auto`. |
+
+* Koordinat **baris dan kolom dimulai dari 0** dan harus berada di jalan (`0`), bukan dinding (`1`). Mode duel memakai entri pertama `ghosts` untuk kedua algoritma (GUI menulis dua entri identik supaya mudah dibaca).
+* Mengubah spawn hanya memengaruhi simulasi dalam game. File maze di `mazes/` dan skrip benchmark di `pengujian/experiment.py` tetap memakai koordinat bawaan maze, sehingga angka eksperimen lama tetap dapat dibandingkan.
+* Koridor maze kini ditampilkan dengan garis kotak grid tipis untuk memudahkan membaca posisi tiap sel.
+
+### 4. Biaya (cost) per petak
+* Di layar **ATUR POSISI AWAL**, tekan **C** atau tombol **COST** untuk masuk mode biaya. Tekan angka **4-9** untuk memilih nilai (atau **+** / **-** untuk menaikkan / menurunkan, 1-99), lalu klik petak untuk memasang biaya tersebut. **Klik kanan** menghapus biaya satu petak, **H** menghapus semua biaya.
+* Angka biaya tampil di sudut kanan bawah petak. Petak tanpa biaya berharga 1; biaya disimpan di settings.json sebagai blok `"costs": [[baris, kolom, nilai], ...]`.
+* Biaya ikut dihitung saat mencari jalur: A* memakai `g(n) + biaya sel`, sedangkan BFS otomatis berubah ke pencarian berbobot (Dijkstra) agar tetap menemukan jalur termurah. Tanpa biaya, kedua algoritma masih memakai kode aslinya, sehingga hasil benchmark lama tidak berubah.
+* Biaya juga mengatur kecepatan: memasuki petak dengan cost `N` memakan waktu `N` kali jeda gerak dasar. Jadi cost 2 terasa seperti dua langkah, cost 3 seperti tiga langkah. Berlaku untuk Pac-Man maupun ghost.
+
+### 5. Legenda visual pencarian
+* **Biru (Visited / Explored Nodes):** semua sel yang benar-benar dikunjungi dan diperiksa algoritma saat mencari tujuan. Cabang biru yang berhenti di jalan buntu adalah area eksplorasi yang terbukti tidak mengarah langsung ke tujuan.
+* **Kuning (Final Solution Path):** jalur akhir yang berhasil ditemukan dari titik awal ghost ke target setelah tujuan tercapai. Jalur ini digambar di atas area biru supaya mudah dibedakan.
+* Data biru berasal dari himpunan sel yang diekspansi algoritma (`with_visited=True`); jalur kuning berasal dari jalur yang sama dengan yang dipakai ghost bergerak. Tanpa opsi tersebut, algoritma tetap mengembalikan 3 nilai seperti versi awal sehingga benchmark tidak berubah.
+
 ---
 
 ## 🗺️ Desain Labirin (Maze Design)
