@@ -1,3 +1,4 @@
+import copy
 import json
 import math
 import os
@@ -381,15 +382,22 @@ class GhostAgent:
 
 class Game:
     def __init__(self, maze_path, algorithm="astar", condition="diam",
-                 spawn_settings=None, start_delay=None, costs=None):
+                 spawn_settings=None, start_delay=None, costs=None, maze_data=None):
         self.algorithm = str(algorithm).lower()
+        self.maze_path = maze_path
+        self.spawn_settings = copy.deepcopy(spawn_settings) if isinstance(spawn_settings, dict) else {}
+        self.playback_mode = False  # true hanya saat input berasal dari rekaman
+        self._held_override = None  # arah virtual untuk playback (KEYUP -> None)
         self.is_duel = self.algorithm in ("duel", "both", "keduanya", "bfs+astar", "bfs+astar+search")
         self.algorithms = ("bfs", "astar") if self.is_duel else (self.algorithm,)
         self.condition = condition
         self.search_func = SEARCH.get(self.algorithms[0], cari_jalur_astar)
 
-        with open(maze_path, "r") as f:
-            self.maze_data = json.load(f)
+        if maze_data is not None:
+            self.maze_data = copy.deepcopy(maze_data)
+        else:
+            with open(maze_path, "r") as f:
+                self.maze_data = json.load(f)
 
         self.grid = self.maze_data["grid"]
         if costs is None:
@@ -511,11 +519,59 @@ class Game:
     def winner(self):
         return "pacman" if self.state == config.STATE_WIN else "ghost"
 
-    def handle_input(self, event):
+    def handle_input(self, event, recorder=None, tick=0):
+        """Keyboard -> command controller. Satu jalur dengan playback (submit_input)."""
         if self.state != config.STATE_PLAYING or self.condition != "bergerak":
             return
         if event.type == pygame.KEYDOWN and event.key in self.key_dir:
-            self.buffered_dir = self.key_dir[event.key]
+            arah = self.key_dir[event.key]
+            self.submit_input("PRESS", arah, record=True, recorder=recorder,
+                              tick=tick, key=event.key)
+        elif event.type == pygame.KEYUP and event.key in self.key_dir:
+            arah = self.key_dir[event.key]
+            self.submit_input("RELEASE", arah, record=True, recorder=recorder,
+                              tick=tick, key=event.key)
+
+    def submit_input(self, event_type, direction, record=False,
+                     recorder=None, tick=0, key=None):
+        """Satu titik masuk perintah: dipakai keyboard manual DAN playback.
+
+        Playback memanggil dengan record=False sehingga tidak pernah membuat
+        rekaman baru. PRESS mengisi buffer sekaligus arah tahan virtual; RELEASE
+        menghapus arah tahan virtual (manual tetap memakai pygame.key.get_pressed).
+        """
+        if self.state != config.STATE_PLAYING or self.condition != "bergerak":
+            return
+        if direction is None or direction not in config.DIRECTION_NAMES:
+            return
+        if record and recorder is not None:
+            recorder.capture(tick, event_type,
+                             config.DIRECTION_NAMES[direction], key=key)
+        if str(event_type).upper() == "PRESS":
+            self.buffered_dir = direction
+            self._held_override = direction
+        elif str(event_type).upper() == "RELEASE":
+            if self._held_override == direction:
+                self._held_override = None
+
+    def held_direction(self):
+        """Arah tahan: virtual saat playback, keyboard fisik saat manual."""
+        if self.playback_mode:
+            return self._held_override
+        keys = pygame.key.get_pressed()
+        for key, arah in self.key_dir.items():
+            if keys[key]:
+                return arah
+        return None
+
+    def key_bindings(self):
+        """Pemetaan nama arah -> kunci, untuk disimpan dalam rekaman."""
+        hasil = {nama: [] for nama in config.DIRECTION_BY_NAME}
+        for key, arah in self.key_dir.items():
+            hasil[config.DIRECTION_NAMES[arah]].append(int(key))
+        for nama in hasil:
+            hasil[nama].sort()
+        return hasil
 
     def is_valid_move(self, r, c):
         return (0 <= r < len(self.grid) and 0 <= c < len(self.grid[0]) and self.grid[r][c] != 1)
@@ -550,12 +606,9 @@ class Game:
                         and self.is_valid_move(self.pacman_pos[0] + arah[0],
                                                self.pacman_pos[1] + arah[1]))
 
-            keys = pygame.key.get_pressed()
-            held_dir = None
-            for key, arah in self.key_dir.items():
-                if keys[key] and bisa(arah):
-                    held_dir = arah
-                    break
+            held_dir = self.held_direction()
+            if held_dir is not None and not bisa(held_dir):
+                held_dir = None
 
             arah = None
             pakai_buffer = False
@@ -615,6 +668,49 @@ class Game:
             self.state = config.STATE_WIN
         elif any(list(g.pos) == self.pacman_pos for g in self.ghosts):
             self.state = config.STATE_LOSE
+
+    def apply_initial_state(self, initial):
+        """Pasang kondisi awal dari rekaman pada object Game yang sudah dibuat.
+
+        Hanya dipakai SEBELUM playback dimulai; tidak pernah dipanggil selama
+        game berjalan. Pergerakan tetap lewat update() dan collision asli.
+        """
+        cfg = initial.get("game_config", {})
+        now = pygame.time.get_ticks()
+        self.pacman_pos = list(initial["player"])
+        self.exit_pos = list(initial["exit"])
+        self.costs = _normalisasi_biaya(cfg.get("costs"))
+        self.pacman_move_delay = float(cfg.get(
+            "pacman_move_delay", config.PACMAN_MOVE_DELAY))
+        self.pacman_interval_aktif = self.pacman_move_delay * 1000
+        self.start_delay = float(cfg.get(
+            "start_delay_seconds", config.START_DELAY_SECONDS))
+        self.started_at = now
+        self.jeda_selesai = self.start_delay <= 0
+        self.pacman_last_move_time = now
+        self.ghost_last_move_time = now
+        self.buffered_dir = None
+        self.current_dir = None
+        self.state = config.STATE_PLAYING
+        self.exit_path = []
+        self.pacman_total_nodes = 0
+        self.pacman_total_time = 0.0
+        self.pacman_search_count = 0
+        # Input replay mensyaratkan Pac-Man bisa dikendalikan.
+        self.condition = "bergerak"
+        for ghost, saved in zip(self.ghosts, initial["ghosts"]):
+            ghost.pos = list(saved["pos"])
+            ghost.path = []
+            ghost.visited = []
+            ghost.last_move_time = now
+        self.update_ghost_path()  # rute awal dihitung dengan algoritma pilihan UI
+        for ghost in self.ghosts:  # statistik mulai dari nol saat playback dimulai
+            ghost.total_nodes = 0
+            ghost.total_time = 0.0
+            ghost.search_count = 0
+            ghost.last_path_length = max(len(ghost.path), 0)
+
+
 
     def _gambar_jeda(self, screen, layout, sisa):
         """Penanda jeda di area HUD; maze tetap terlihat penuh."""
@@ -699,21 +795,153 @@ class Game:
             self._gambar_jeda(screen, layout, sisa)
 
 
+
+def snapshot_initial_state(game, random_seed=None):
+    """Ambil kondisi awal lengkap dari game yang sedang berjalan."""
+    if random_seed is None:
+        random_seed = int.from_bytes(os.urandom(4), "little")
+    maze_file = str(game.maze_path or "")
+    try:
+        maze_file = os.path.relpath(maze_file, config.BASE_DIR)
+    except (ValueError, OSError):
+        pass
+    return {
+        "maze_file": maze_file,
+        "maze": copy.deepcopy(game.maze_data),
+        "player": list(game.pacman_pos),
+        "ghosts": [{"algorithm": g.algorithm, "pos": list(g.pos)}
+                   for g in game.ghosts],
+        "exit": list(game.exit_pos),
+        "game_config": {
+            "condition": game.condition,
+            "algorithm": game.algorithm,
+            "tick_rate": int(config.FPS),
+            "pacman_move_delay": float(game.pacman_move_delay),
+            "ghost_move_delay": float(config.GHOST_MOVE_DELAY),
+            "start_delay_seconds": float(game.start_delay),
+            "ghost_mode": game.ghost_mode,
+            "key_bindings": game.key_bindings(),
+            "costs": [[r, c, v] for (r, c), v in sorted(game.costs.items())],
+        },
+        "spawn_settings": copy.deepcopy(game.spawn_settings),
+        "random_seed": int(random_seed),
+    }
+
+
+def build_game_from_recording(recording, algorithm):
+    """Bangun ulang Game dari rekaman; algoritma diambil dari pilihan UI, bukan metadata."""
+    initial = recording["initial_state"]
+    algo = str(algorithm).lower()
+    if algo not in SEARCH:
+        raise ValueError("Algoritma tidak dikenal: {0}".format(algorithm))
+    cfg = initial.get("game_config", {})
+    seed = initial.get("random_seed")
+    if seed is not None:
+        try:
+            random.seed(int(seed))
+        except (TypeError, ValueError):
+            pass
+    game = Game(initial.get("maze_file") or "rekaman",
+                algo, "bergerak",
+                spawn_settings=copy.deepcopy(initial.get("spawn_settings") or {}),
+                start_delay=cfg.get("start_delay_seconds"),
+                costs=cfg.get("costs"),
+                maze_data=initial["maze"])
+    saved = [dict(g) for g in initial["ghosts"]]
+    cocok = [g for g in saved if str(g.get("algorithm", "")).lower() == algo]
+    if cocok:
+        saved = [cocok[0]]
+    game.apply_initial_state(dict(initial, ghosts=saved[:1]))
+    game.playback_mode = True
+    return game
+
+
 # FUNGSI YANG HILANG TADI, SEKARANG SUDAH DIKEMBALIKAN
-def run_game(screen, game):
+def run_game(screen, game, session=None, mode="manual"):
+    """Jalankan satu sesi gameplay.
+
+    mode='manual'  : gameplay lama, tanpa recorder/playback.
+    mode='record'  : recorder sudah aktif sebelum loop; STOP disimpan.
+    mode='playback': runner sudah dibuat sebelum loop; input fisik diabaikan.
+    """
+    from core.recorder import ExperimentSession
+    from tampilan.ui_record import RuntimeStatus
+
+    if session is None:
+        session = ExperimentSession()
+    status = RuntimeStatus()
     clock = pygame.time.Clock()
+    tick = 0  # simulation tick = jumlah update() sejak run_game dimulai
+    rekam = mode == "record"
+    playback = mode == "playback"
+
     while game.state == config.STATE_PLAYING:
-        clock.tick(config.FPS)
+        if playback and session.runner and session.runner.finished:
+            break
+        laju = (session.runner.recording["simulation_tick_rate"]
+                if playback and session.runner else config.FPS)
+        clock.tick(max(1, int(laju)))
+        berhenti = False
+
         for event in pygame.event.get():
             audio.handle_event(event)
             if event.type == pygame.QUIT:
+                if rekam and session.recorder.active:
+                    session.stop_recording(game, tick)
+                    return "quit"
+                if playback and session.runner and not session.runner.finished:
+                    session.runner.finish(game, "ended")
+                    session.selesai_playback(game)
                 return "quit"
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                if playback or rekam:
+                    berhenti = True  # STOP lewat keyboard juga didukung
+                    continue
                 return "menu"
-            game.handle_input(event)
-            
+            if playback or rekam:
+                if status.handle(event, screen) == "stop":
+                    berhenti = True
+                if playback:
+                    continue  # keyboard arah fisik tidak mencampuri playback
+            if (event.type in (pygame.KEYDOWN, pygame.KEYUP)
+                    and not getattr(event, "repeat", False)):
+                game.handle_input(event,
+                                  recorder=session.recorder if rekam else None,
+                                  tick=tick)
+
+        # Event tick berjalan diproses dulu sebelum STOP diberlakukan.
+        if (playback and session.runner and not session.runner.finished
+                and not berhenti):
+            session.runner.inject(game, tick)
+
         game.update()
+        tick += 1
+
+        if playback and session.runner and not session.runner.finished:
+            session.runner.advance(game)
+        if playback and session.runner and session.runner.finished:
+            session.selesai_playback(game)
+
+        if berhenti:
+            if rekam:
+                session.stop_recording(game, tick)
+                return "record_done"
+            if playback and session.runner and not session.runner.finished:
+                session.runner.stop(game)
+                session.selesai_playback(game)
+                return "finished"
+
         game.render(screen)
+        if rekam or playback:
+            status.draw(screen, session, mode, game, tick)
         pygame.display.flip()
-        
+
+    if rekam:
+        if session.recorder.active:
+            session.stop_recording(game, tick)
+        return "record_done"
+    if playback and session.runner and not session.runner.finished:
+        session.runner.finish(game, "ended")
+    if playback:
+        session.selesai_playback(game)
     return "finished"

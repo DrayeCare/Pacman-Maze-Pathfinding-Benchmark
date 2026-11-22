@@ -107,6 +107,26 @@ flowchart LR
 - **Kuning (Final Solution Path):** jalur akhir yang berhasil ditemukan dari titik awal ghost ke target setelah tujuan tercapai. Jalur ini digambar di atas area biru supaya mudah dibedakan.
 - Data biru berasal dari himpunan sel yang diekspansi algoritma (`with_visited=True`); jalur kuning berasal dari jalur yang sama dengan yang dipakai ghost bergerak. Tanpa opsi tersebut, algoritma tetap mengembalikan 3 nilai seperti versi awal sehingga benchmark tidak berubah.
 
+### 6. Rekam Input Pemain & Playback (Input Recording)
+
+Mode dipilih **sebelum** game dibuat, lewat layar **PILIH MODE** (menu MULAI):
+
+- **MANUAL MODE** — gameplay lama tanpa recorder, tanpa panel playback.
+- **RECORD MODE** — konfigurasi maze/spawn sama seperti manual, kondisi `Pac-Man Bergerak` dipaksa, dan rekaman dimulai otomatis pada tick pertama. Selama game hanya ada indikator ringkas `REC <jumlah input> | tick <n>` dan tombol **STOP**. STOP menyimpan file JSON unik ke `input_recordings/` lalu menampilkan halaman ringkasan dengan **KEMBALI KE MENU**. Arah yang masih ditahan dilepaskan otomatis saat STOP agar replay tidak macet.
+- **PLAYBACK MODE** — halaman konfigurasi terpisah: pilih rekaman (↑/↓), pilih **BFS** atau **A*** (←/→), **PLAY**, **BACK**. Metadata rekaman (nama, jumlah input, durasi, tick rate, schema) ditampilkan. Game dibuat dari kondisi awal rekaman dengan algoritma pilihan pengguna. Selama game hanya indikator `PLAYBACK <ALGO> <tick>` + **STOP**; keyboard arah fisik diabaikan.
+
+Isi file rekaman: `schema_version`, `recording_name`, `simulation_tick_rate`, durasi (tick), jumlah event, algoritma saat perekaman (metadata), **kondisi awal lengkap** (grid maze, posisi Pac-Man/ghost/exit, cost, konfigurasi gerak, key binding, seed), dan daftar `input_events` (`tick`, `sequence`, `PRESS`/`RELEASE`, arah). Tidak ada koordinat/teleport; playback memakai `Game.submit_input`, movement dan collision asli.
+
+Setelah playback selesai/dihentikan, halaman **HASIL PLAYBACK** menampilkan recording, algoritma, status, metrik (waktu pencarian, simpul, panjang jalur), lalu **PLAY AGAIN**, **GANTI KE A*/BFS** (rekaman yang sama, algoritma lain), dan **KE MENU**. Hasil juga masuk layar INFO.
+
+Dari menu utama, tombol **RECORDINGS** (atau `4`) membuka **RECORDING MANAGER**: daftar semua rekaman dengan nama, tanggal, jumlah input, dan durasi. **DELETE** meminta konfirmasi dengan nama rekaman; **DELETE ALL** meminta dua konfirmasi dan hanya menghapus file rekaman valid di `input_recordings/`. File rusak, symlink, path di luar direktori, dan file non-rekaman tidak dihapus. Daftar diperbarui otomatis setelah penghapusan atau penyimpanan rekaman baru.
+
+Jalankan tes otomatis dengan:
+
+```text
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
+```
+
 ---
 
 ## 🗺️ Desain Labirin (Maze Design)

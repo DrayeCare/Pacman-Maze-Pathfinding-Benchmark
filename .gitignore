@@ -9,6 +9,7 @@ env/
 .idea/
 results.csv
 settings.json
+input_recordings/
 .DS_Store
 Thumbs.db
 all-code.txt

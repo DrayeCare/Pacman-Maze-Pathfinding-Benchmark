@@ -23,6 +23,9 @@ TILE_SIZE = 30  # Ukuran 1 kotak grid dalam piksel
 MAZE_WIDTH = GRID_COLS * TILE_SIZE  # 630 piksel
 MAZE_HEIGHT = GRID_ROWS * TILE_SIZE  # 630 piksel
 
+# Versi schema rekaman input (bump bila format berubah secara incompatible).
+RECORDING_SCHEMA_VERSION = 1
+
 # Bar Informasi / Heads-Up Display (HUD) di bagian bawah
 HUD_HEIGHT = 60
 SCREEN_WIDTH = MAZE_WIDTH  # Total lebar: 630 px
@@ -65,6 +68,11 @@ RIGHT = (0, 1)
 # Tuple 4 arah pergerakan yang valid di dalam grid
 DIRECTIONS = (UP, DOWN, LEFT, RIGHT)
 
+# Nama kanonik arah untuk rekaman input. Rekaman menyimpan perintah, bukan
+# koordinat, jadi nama ini harus stabil walau kontrol diganti WASD/arrow.
+DIRECTION_NAMES = {UP: "UP", DOWN: "DOWN", LEFT: "LEFT", RIGHT: "RIGHT"}
+DIRECTION_BY_NAME = {name: delta for delta, name in DIRECTION_NAMES.items()}
+
 # ==============================================================================
 # 4. PALET WARNA (RGB & RGBA)
 # (Sesuai elemen visual Pac-Man, Ghost, Exit, Wall, dan Antarmuka HUD)
@@ -103,6 +111,9 @@ FONT_SIZE_HUD = 20
 # ==============================================================================
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAZE_DIR = os.path.join(BASE_DIR, "mazes")
+
+# Direktori rekaman input pemain (dibuat otomatis saat penyimpanan pertama).
+RECORDINGS_DIR = os.path.join(BASE_DIR, "input_recordings")
 
 # Path file JSON untuk masing-masing maze
 MAZE_FILES = {

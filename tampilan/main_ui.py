@@ -22,12 +22,14 @@ MENU_ITEMS = [
     ("mulai", "MULAI"),
     ("setting", "SETTING"),
     ("info", "INFO"),
+    ("recordings", "RECORDINGS"),
     ("quit", "QUIT"),
 ]
 AKSEN = {
     "mulai": theme.PACMAN,
     "setting": theme.SURFACE_2,
     "info": theme.BFS,
+    "recordings": theme.ASTAR,
     "quit": theme.DANGER,
 }
 
@@ -131,6 +133,13 @@ class Button:
                                max(4, int(8 * self.s)), 2)
             theme.text(screen, "i", max(11, int(13 * self.s)), warna_ikon,
                        (ikon_x, cy - self.s), bold=True)
+        elif self.value == "recordings":
+            pygame.draw.rect(screen, warna_ikon,
+                             (ikon_x - int(9 * self.s), cy - int(7 * self.s),
+                              int(18 * self.s), int(14 * self.s)), 2)
+            pygame.draw.line(screen, warna_ikon,
+                             (ikon_x - int(9 * self.s), cy - int(3 * self.s)),
+                             (ikon_x + int(9 * self.s), cy - int(3 * self.s)), 2)
         else:
             d = int(6 * self.s)
             pygame.draw.line(screen, warna_ikon,
@@ -209,8 +218,9 @@ def show_main_menu(screen=None):
                           w - 2 * margin, h - margin - hero.bottom - int(theme.S * s))
 
     gap = int(theme.S * s)
-    btn_h = max(28, min(int(56 * s),
-                        (nav.height - int(76 * s) - 3 * gap) // 4))
+    jumlah = len(MENU_ITEMS)
+    btn_h = max(24, min(int(56 * s),
+                        (nav.height - int(76 * s) - (jumlah - 1) * gap) // jumlah))
     btn_w = min(int(300 * s), nav.width - int(theme.L * s))
     buttons = [
         Button((nav.centerx - btn_w // 2,
@@ -219,8 +229,7 @@ def show_main_menu(screen=None):
                label, value, int(theme.SIZE_H3 * s), s)
         for i, (value, label) in enumerate(MENU_ITEMS)
     ]
-    keymap = {pygame.K_1: "mulai", pygame.K_2: "setting",
-              pygame.K_3: "info", pygame.K_4: "quit"}
+    keymap = {pygame.K_1 + i: value for i, (value, _) in enumerate(MENU_ITEMS)}
 
     while True:
         t = pygame.time.get_ticks()
@@ -245,7 +254,8 @@ def show_main_menu(screen=None):
                    (nav.centerx, nav.top + int(28 * s)), bold=True)
         for b in buttons:
             b.draw(screen, t)
-        theme.text(screen, "1-4 pilih | M musik | -/+ volume | ESC keluar",
+        theme.text(screen, "1-{0} pilih | M musik | -/+ volume | ESC keluar".format(
+            len(MENU_ITEMS)),
                    int(theme.SIZE_CAPTION * s), theme.TEXT_MUTED,
                    (nav.centerx, nav.bottom - int(18 * s)))
 
