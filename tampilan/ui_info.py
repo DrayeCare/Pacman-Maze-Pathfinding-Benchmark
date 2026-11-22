@@ -56,22 +56,36 @@ def _text(screen, msg, size, color, center, bold=False):
 # ==============================================================================
 # FUNGSI EXPORT KE EXCEL
 # ==============================================================================
+
 def export_to_csv(data, filename="Hasil_Percobaan_Pacman.csv"):
     try:
         with open(filename, mode='w', newline='', encoding='utf-8-sig') as file:
             file.write("sep=,\n")
             writer = csv.writer(file, delimiter=',')
-            writer.writerow(["No", "Nama Map", "Kondisi", "Waktu Pencarian (ms)", "Jumlah Simpul", "Panjang Alur (Langkah)"])
+
+            writer.writerow([
+                "No",
+                "Algoritma yang Digunakan",
+                "Nama Map",
+                "Kondisi",
+                "Waktu Pencarian (ms)",
+                "Jumlah Simpul",
+                "Panjang Alur (Langkah)"
+            ])
+
             for i, item in enumerate(data):
                 writer.writerow([
-                    i + 1, 
-                    item["nama_map"], 
-                    item["kondisi"], 
-                    item["waktu"], 
-                    item["simpul"], 
+                    i + 1,
+                    item.get("algoritma", "-"),
+                    item["nama_map"],
+                    item["kondisi"],
+                    item["waktu"],
+                    item["simpul"],
                     item["panjang"]
                 ])
+
         return True, filename
+
     except Exception as e:
         return False, str(e)
 

@@ -4,7 +4,6 @@ import heapq
 from algoritma.biaya import biaya_sel
 from algoritma.hasil import keluaran
 
-
 def heuristik_manhattan(posisi_sekarang, target):
     return abs(posisi_sekarang[0] - target[0]) + abs(posisi_sekarang[1] - target[1])
 
