@@ -27,6 +27,7 @@ PACMAN = (255, 214, 40)
 WALL = (48, 76, 216)
 WALL_HI = (92, 124, 255)
 PATH = (5, 7, 18)
+GRID = (32, 45, 86)  # Garis kotak halus pada sel koridor
 EXIT = (46, 204, 113)
 GHOST_RED = (240, 72, 84)
 GHOST_PINK = (242, 150, 190)
