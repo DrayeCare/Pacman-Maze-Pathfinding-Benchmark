@@ -174,6 +174,45 @@ def save_input_recording(recording, directory=None):
     raise RecordingError("Gagal membuat nama file rekaman yang unik.")
 
 
+def rename_input_recording(path, nama_baru, directory=None):
+    """Ganti nama rekaman: nama file DAN recording_name di dalam JSON.
+
+    Stempel waktu di akhir nama file (_YYYYMMDD_HHMMSS) dipertahankan, jadi
+    hasilnya mis. 'maze1_bfs_20261127_054218.json'. Tidak pernah menimpa file
+    lain. Mengembalikan (path_baru, nama_bersih).
+    """
+    folder = directory or config.RECORDINGS_DIR
+    if not _dalam_direktori(path, folder):
+        raise RecordingError("Lokasi file rekaman tidak valid.")
+    if not str(nama_baru or "").strip():
+        raise RecordingError("Nama tidak boleh kosong.")
+    dasar = _slug(nama_baru)
+
+    nama_lama = os.path.splitext(os.path.basename(path))[0]
+    cocok = re.search(r"_(\d{8}_\d{6})(?:_\d{2})?$", nama_lama)
+    cap = cocok.group(1) if cocok else datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    data = load_input_recording(path)
+    data["recording_name"] = dasar
+
+    for i in range(100):
+        suffix = "" if i == 0 else "_{0:02d}".format(i)
+        baru = os.path.join(folder, "{0}_{1}{2}.json".format(dasar, cap, suffix))
+        if os.path.abspath(baru) == os.path.abspath(path):
+            # Nama file sama: cukup perbarui isi file di tempat.
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            return path, dasar
+        try:
+            with open(baru, "x", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except FileExistsError:
+            continue
+        os.remove(path)
+        return baru, dasar
+    raise RecordingError("Gagal membuat nama file rekaman yang unik.")
+
+
 def list_input_recordings(directory=None):
     folder = directory or config.RECORDINGS_DIR
     if not os.path.isdir(folder):

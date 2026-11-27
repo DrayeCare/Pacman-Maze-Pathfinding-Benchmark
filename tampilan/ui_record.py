@@ -10,6 +10,7 @@ import os
 import pygame
 
 from core import config
+from core.recorder import RecordingError, rename_input_recording
 from tampilan import theme
 from tampilan.visual import hitung_layout
 
@@ -83,8 +84,12 @@ class _Tombol:
                        self.rect.width - 12, self.font_size, theme.TEXT, bold=True)
 
 
-def show_record_summary(screen, info):
-    """Halaman setelah STOP RECORDING / akhir game pada mode RECORD."""
+def show_record_summary(screen, info, session=None):
+    """Halaman setelah STOP RECORDING / akhir game pada mode RECORD.
+
+    Ada kotak "GANTI NAMA": klik kotak, ketik nama baru, tekan ENTER. File
+    rekaman di disk ikut diganti namanya supaya mudah dikenali nanti.
+    """
     pygame.display.set_caption("Pac-Man AI: Rekaman Tersimpan")
     w, h = screen.get_size()
     clock = pygame.time.Clock()
@@ -102,10 +107,41 @@ def show_record_summary(screen, info):
     quit_btn = _Tombol((cx + int(12 * s), panel_rect.bottom - int(78 * s),
                         btn_w, btn_h), "QUIT", theme.SURFACE_2, int(20 * s))
 
+    kotak = pygame.Rect(cx - int(70 * s), panel_rect.top + int(306 * s),
+                        int(320 * s), int(32 * s))
+    fokus, teks_baru, pesan_error = False, "", False
+
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return "quit"
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                fokus = kotak.collidepoint(event.pos)  # klik di luar = lepas fokus
+            if fokus and event.type == pygame.KEYDOWN:
+                # Saat mengetik, tombol Q / ESC / ENTER tidak boleh keluar halaman.
+                if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                    if not info.get("file"):
+                        info["message"], pesan_error = "Tidak ada file untuk diganti namanya.", True
+                    else:
+                        try:
+                            baru, nama = rename_input_recording(info["file"], teks_baru)
+                            info["file"], info["name"] = baru, nama
+                            info["message"] = "Nama diganti: {0}".format(os.path.basename(baru))
+                            pesan_error = False
+                            teks_baru, fokus = "", False
+                            if session is not None:
+                                session.refresh(force=True)
+                                session.pilih_rekaman(baru)
+                        except (RecordingError, OSError) as exc:
+                            info["message"], pesan_error = str(exc), True
+                elif event.key == pygame.K_ESCAPE:
+                    teks_baru, fokus = "", False
+                elif event.key == pygame.K_BACKSPACE:
+                    teks_baru = teks_baru[:-1]
+                elif (event.unicode and event.unicode.isascii() and len(teks_baru) < 40
+                        and (event.unicode.isalnum() or event.unicode in "-_ ")):
+                    teks_baru += event.unicode
+                continue
             if event.type == pygame.KEYDOWN:
                 if event.key in (pygame.K_ESCAPE, pygame.K_RETURN,
                                  pygame.K_KP_ENTER):
@@ -122,8 +158,9 @@ def show_record_summary(screen, info):
                     radius=18, width=2)
         theme.text(screen, "REKAMAN SELESAI", int(38 * s), theme.DANGER,
                    (cx, panel_rect.top + int(64 * s)), bold=True)
-        theme.text(screen, info.get("message", ""), int(16 * s), theme.TEXT_MUTED,
-                   (cx, panel_rect.top + int(106 * s)))
+        theme.fit_text(screen, info.get("message", ""),
+                       (cx, panel_rect.top + int(106 * s)), lebar - int(30 * s),
+                       int(16 * s), theme.DANGER if pesan_error else theme.TEXT_MUTED)
 
         baris = [
             ("NAMA REKAMAN", info.get("name", "-")),
@@ -137,6 +174,20 @@ def show_record_summary(screen, info):
                        (cx - int(190 * s), y), bold=True)
             theme.fit_text(screen, nilai, (cx + int(90 * s), y),
                            int(320 * s), int(18 * s), theme.TEXT, bold=True)
+
+        theme.text(screen, "GANTI NAMA", int(14 * s), theme.TEXT_DIM,
+                   (cx - int(190 * s), kotak.centery), bold=True)
+        pygame.draw.rect(screen, theme.SURFACE_2, kotak, border_radius=6)
+        pygame.draw.rect(screen, theme.SUCCESS if fokus else theme.BORDER, kotak,
+                         2, border_radius=6)
+        if fokus or teks_baru:
+            kursor = "|" if fokus and (pygame.time.get_ticks() // 500) % 2 == 0 else ""
+            theme.fit_text(screen, teks_baru + kursor, kotak.center,
+                           kotak.width - int(16 * s), int(16 * s), theme.TEXT, bold=True)
+        else:
+            theme.fit_text(screen, "klik di sini, ketik nama, tekan ENTER",
+                           kotak.center, kotak.width - int(16 * s), int(13 * s),
+                           theme.TEXT_DIM)
 
         menu_btn.draw(screen)
         quit_btn.draw(screen)

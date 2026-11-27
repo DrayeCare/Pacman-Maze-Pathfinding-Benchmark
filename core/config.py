@@ -46,8 +46,13 @@ GHOST_MOVE_EVERY = 1
 
 # Delay pergerakan karakter dalam satuan detik (tetap, tidak bergantung pada FPS).
 # Konstanta ini dipakai oleh core/game.py untuk mengatur timing gerak.
-PACMAN_MOVE_DELAY = 0.125
-GHOST_MOVE_DELAY = 0.280
+# Pac-Man dan Ghost SAMA CEPAT (0.20 detik/langkah = 5 petak per detik) supaya
+# hasil BFS vs A* tidak ditentukan oleh selisih kecepatan. 0.20 = tepat 2 tick
+# simulasi (FPS = 10 -> 1 tick = 0.1 detik), jadi gerak keduanya rapi per tick.
+# (Sebelumnya: Pac-Man 0.125 dan Ghost 0.280.)
+KECEPATAN_KARAKTER = 0.20
+PACMAN_MOVE_DELAY = KECEPATAN_KARAKTER
+GHOST_MOVE_DELAY = KECEPATAN_KARAKTER
 
 # Jeda sebelum karakter mulai bergerak saat game dimulai (detik).
 START_DELAY_SECONDS = 2.0

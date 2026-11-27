@@ -11,6 +11,8 @@ import pygame
 from core import config
 from core import audio
 from core.recorder import recording_info
+from pengujian import ekspor
+from tampilan import gambar_jejak
 from tampilan import theme
 
 FPS = getattr(config, "FPS", 10)
@@ -142,7 +144,7 @@ def show_playback_config(screen, session):
                     radius=18, width=2)
         _teks(screen, "INPUT PLAYBACK", int(34 * s), theme.BFS,
               (cx, panel.top + int(44 * s)), bold=True)
-        _teks(screen, "Pilih rekaman dan algoritma sebelum game dimulai",
+        _teks(screen, "Pilih rekaman + algoritma pertama; algoritma lainnya otomatis menyusul",
               int(14 * s), theme.TEXT_MUTED, (cx, panel.top + int(76 * s)))
 
         if not sesi_paths:
@@ -262,9 +264,204 @@ def show_playback_result(screen, result):
                            int(280 * s), int(17 * s), warna if i in (1, 2, 3)
                            else theme.TEXT, bold=True)
 
+        if result.get("csv_info"):
+            _teks(screen, str(result["csv_info"]), max(9, int(12 * s)),
+                  theme.TEXT_DIM, (cx, panel.bottom - int(100 * s)))
         for btn, _ in tombol:
             btn.draw(screen)
         _teks(screen, "ENTER play lagi   C ganti algoritma   ESC menu",
+              int(13 * s), theme.TEXT_DIM, (cx, h - int(22 * s)))
+        pygame.display.flip()
+        clock.tick(FPS)
+
+
+def show_playback_pair_result(screen, session, hasil_list):
+    """Hasil satu uji: BFS dan A* pada rekaman yang sama + tombol EXPORT CSV.
+
+    Mengembalikan 'again' (uji rekaman lain), 'menu', atau 'quit'. EXPORT CSV
+    menulis SEMUA hasil sesi ini (semua uji) ke satu file CSV.
+    """
+    pygame.display.set_caption("Pac-Man AI: Hasil Uji BFS vs A*")
+    w, h = screen.get_size()
+    clock = pygame.time.Clock()
+    s = min(h / 720.0, w / 1280.0)
+    cx = w // 2
+    hasil_list = [r for r in (hasil_list or []) if r]
+    per_algo = {str(r.get("algorithm", "")).lower(): r for r in hasil_list}
+    contoh = hasil_list[0] if hasil_list else {}
+
+    lebar = min(int(780 * s), w - 40)
+    tinggi = min(int(600 * s), h - 40)
+    panel = pygame.Rect(cx - lebar // 2, h // 2 - tinggi // 2, lebar, tinggi)
+    btn_w, btn_h = int(178 * s), int(52 * s)
+    gap = int(10 * s)
+    x0 = cx - (4 * btn_w + 3 * gap) // 2
+    y_btn = panel.bottom - int(78 * s)
+    tombol = [
+        (_Tombol((x0, y_btn, btn_w, btn_h), "EXPORT CSV", theme.SUCCESS), "export"),
+        (_Tombol((x0 + (btn_w + gap), y_btn, btn_w, btn_h), "GAMBAR",
+                 theme.WALL), "gambar"),
+        (_Tombol((x0 + 2 * (btn_w + gap), y_btn, btn_w, btn_h), "UJI LAGI",
+                 theme.warna_algoritma("bfs")), "again"),
+        (_Tombol((x0 + 3 * (btn_w + gap), y_btn, btn_w, btn_h), "KE MENU",
+                 theme.SURFACE_2), "menu"),
+    ]
+    tampil_gambar = False
+    game_per_algo = {kode: r.get("_game") for kode, r in per_algo.items()}
+    cache_gambar = {}
+
+    def gambar_algo(kode, sisi):
+        game = game_per_algo.get(kode)
+        if game is None:
+            return None, None
+        if kode not in cache_gambar:
+            data = game.data_jejak(0)
+            cache_gambar[kode] = (data, gambar_jejak.buat_gambar(data, sisi))
+        return cache_gambar[kode]
+
+    kolom_x = {"label": panel.left + int(34 * s),
+               "bfs": panel.left + int(470 * s),
+               "astar": panel.left + int(640 * s)}
+    baris = [
+        ("PEMENANG", lambda r: str(r.get("winner", "-")).upper()),
+        ("INPUT DITERAPKAN", lambda r: str(r.get("input_count", 0))),
+        ("TICK", lambda r: str(r.get("ticks", 0))),
+        ("WAKTU PENCARIAN", lambda r: "{0:.3f} ms".format(
+            float((r.get("stats") or {}).get("search_time_ms", 0.0)))),
+        ("SIMPUL EKSPLORASI", lambda r: str((r.get("stats") or {}).get("nodes_explored", 0))),
+        ("PANJANG JALUR", lambda r: str((r.get("stats") or {}).get("path_length", 0))),
+    ]
+
+    pesan, pesan_err, jalur_info = "", False, ""
+
+    def lakukan_ekspor():
+        hasil = ekspor.ekspor_semua_csv(session.results)
+        if not hasil["ok"]:
+            return "CSV gagal: " + hasil["error"], True, ""
+        teks = "CSV tersimpan: {0} ({1} hasil, {2} uji)".format(
+            os.path.basename(hasil["path"]), hasil["baris"], hasil["uji"])
+        if hasil["belum_lengkap"]:
+            teks += " | {0} uji belum punya BFS dan A*".format(hasil["belum_lengkap"])
+        # Gambar jalur/jejak tiap hasil ikut disimpan sebagai PNG.
+        daftar = []
+        for item in ekspor.urutkan(session.results):
+            r = item["hasil"]
+            game = r.get("_game")
+            if game is None:
+                continue
+            st = r.get("stats") or {}
+            daftar.append((
+                gambar_jejak.nama_file("uji{0:02d}".format(item["no_uji"]),
+                                       "maze{0}".format(item["maze_id"]),
+                                       r.get("recording", ""), ekspor.nama_algo(r)),
+                game.data_jejak(0),
+                "{0} | rekaman: {1}".format(ekspor.nama_maze(r), r.get("recording", "")),
+                ["{0} | Pemenang: {1}".format(ekspor.nama_algo(r),
+                                              str(r.get("winner", "-")).capitalize()),
+                 "Waktu {0:.3f} ms | Simpul {1} | Jalur {2} langkah".format(
+                     float(st.get("search_time_ms", 0.0)), st.get("nodes_explored", 0),
+                     st.get("path_length", 0))]))
+        if daftar:
+            folder = os.path.join(os.path.dirname(hasil["path"]),
+                                  "gambar_" + hasil["stempel"])
+            n, err = gambar_jejak.simpan_banyak(daftar, folder)
+            teks += " | {0} gambar PNG di {1}".format(n, os.path.basename(folder)) if n \
+                else " | gambar gagal: {0}".format(err)
+        return teks, False, hasil["path"]
+
+    while True:
+        for event in pygame.event.get():
+            audio.handle_event(event)
+            if event.type == pygame.QUIT:
+                return "quit"
+            if event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
+                    return "menu"
+                if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_r):
+                    return "again"
+                if event.key == pygame.K_e:
+                    pesan, pesan_err, jalur_info = lakukan_ekspor()
+                if event.key == pygame.K_g:
+                    tampil_gambar = not tampil_gambar
+            for btn, nilai in tombol:
+                if btn.clicked(event):
+                    if nilai == "export":
+                        pesan, pesan_err, jalur_info = lakukan_ekspor()
+                    elif nilai == "gambar":
+                        tampil_gambar = not tampil_gambar
+                    else:
+                        return nilai
+        tombol[1][0].label = "ANGKA" if tampil_gambar else "GAMBAR"
+
+        screen.fill(theme.BG_DEEP)
+        theme.panel(screen, panel, fill=theme.SURFACE, border=theme.BORDER,
+                    radius=18, width=2)
+        _teks(screen, "HASIL UJI  BFS vs A*", int(30 * s), theme.TEXT,
+              (cx, panel.top + int(40 * s)), bold=True)
+        theme.fit_text(screen, "{0}   |   rekaman: {1}".format(
+            ekspor.nama_maze(contoh), contoh.get("recording", "-")),
+            (cx, panel.top + int(78 * s)), lebar - int(40 * s), int(15 * s),
+            theme.TEXT_MUTED)
+
+        y_head = panel.top + int(118 * s)
+        if tampil_gambar:
+            sisi = min((lebar - int(90 * s)) // 2, int(290 * s))
+            atas = panel.top + int(100 * s)
+            pusat_x = {"bfs": cx - sisi // 2 - int(14 * s),
+                       "astar": cx + sisi // 2 + int(14 * s)}
+            data_contoh = None
+            for kode, label in (("bfs", "BFS"), ("astar", "A*")):
+                data, surf_gambar = gambar_algo(kode, sisi)
+                if surf_gambar is None:
+                    _teks(screen, label + ": belum ada gambar", int(14 * s),
+                          theme.TEXT_DIM, (pusat_x[kode], atas + sisi // 2))
+                    continue
+                data_contoh = data
+                screen.blit(surf_gambar, surf_gambar.get_rect(
+                    midtop=(pusat_x[kode], atas)))
+                bawah = atas + surf_gambar.get_height()
+                if data["kondisi"] == "bergerak":
+                    ket = "hantu {0} langkah".format(len(data["jejak_hantu"]) - 1)
+                else:
+                    ket = "jalur {0} langkah".format(len(data["path_awal"]) - 1)
+                _teks(screen, "{0}: {1}".format(label, ket), int(15 * s),
+                      theme.warna_algoritma(kode), (pusat_x[kode], bawah + int(14 * s)),
+                      bold=True)
+                _teks(screen, "Pemenang: " + str(per_algo[kode].get("winner", "-")).capitalize(),
+                      int(13 * s), theme.TEXT_MUTED, (pusat_x[kode], bawah + int(32 * s)))
+            if data_contoh is not None:
+                theme.fit_text(screen, gambar_jejak.legenda(data_contoh),
+                               (cx, atas + sisi + int(50 * s)), lebar - int(30 * s),
+                               int(12 * s), theme.TEXT_DIM)
+        else:
+            for kode, label in (("bfs", "BFS"), ("astar", "A*")):
+                _teks(screen, label, int(20 * s), theme.warna_algoritma(kode),
+                      (kolom_x[kode], y_head), bold=True)
+            for i, (label, ambil) in enumerate(baris):
+                y = y_head + int(38 * s) + i * int(38 * s)
+                surf = theme.font(max(9, int(14 * s)), bold=True).render(
+                    label, True, theme.TEXT_DIM)
+                screen.blit(surf, (kolom_x["label"], y - surf.get_height() / 2))
+                for kode in ("bfs", "astar"):
+                    r = per_algo.get(kode)
+                    theme.fit_text(screen, ambil(r) if r else "-", (kolom_x[kode], y),
+                                   int(150 * s), int(17 * s), theme.TEXT, bold=True)
+
+        info = ekspor.ringkasan(session.results)
+        _teks(screen, "Uji tercatat: {0} / {1}   |   {2} hasil".format(
+            info["uji"], ekspor.TARGET_UJI, info["baris"]),
+            int(15 * s), theme.TEXT_MUTED, (cx, y_btn - int(62 * s)), bold=True)
+        if pesan:
+            theme.fit_text(screen, pesan, (cx, y_btn - int(38 * s)),
+                           lebar - int(30 * s), int(13 * s),
+                           theme.DANGER if pesan_err else theme.SUCCESS)
+        if jalur_info:
+            theme.fit_text(screen, jalur_info, (cx, y_btn - int(18 * s)),
+                           lebar - int(30 * s), int(11 * s), theme.TEXT_DIM)
+
+        for btn, _ in tombol:
+            btn.draw(screen)
+        _teks(screen, "E export CSV   G gambar/angka   ENTER uji lagi   ESC menu",
               int(13 * s), theme.TEXT_DIM, (cx, h - int(22 * s)))
         pygame.display.flip()
         clock.tick(FPS)

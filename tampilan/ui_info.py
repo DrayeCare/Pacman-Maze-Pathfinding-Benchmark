@@ -18,6 +18,7 @@ except ImportError:
     audio = None
 
 from tampilan import theme
+from tampilan import gambar_jejak
 
 # ==============================================================================
 # KONFIGURASI WARNA & FONT — semua token berasal dari theme.py
@@ -61,12 +62,14 @@ def export_to_csv(data, filename="Hasil_Percobaan_Pacman.csv"):
         with open(filename, mode='w', newline='', encoding='utf-8-sig') as file:
             file.write("sep=,\n")
             writer = csv.writer(file, delimiter=',')
-            writer.writerow(["No", "Nama Map", "Kondisi", "Waktu Pencarian (ms)", "Jumlah Simpul", "Panjang Alur (Langkah)"])
+            writer.writerow(["No", "Nama Map", "Kondisi", "Algoritma", "Hasil", "Waktu Pencarian (ms)", "Jumlah Simpul", "Panjang Alur (Langkah)"])
             for i, item in enumerate(data):
                 writer.writerow([
                     i + 1, 
                     item["nama_map"], 
                     item["kondisi"], 
+                    item.get("algoritma", ""),
+                    item.get("hasil", ""),
                     item["waktu"], 
                     item["simpul"], 
                     item["panjang"]
@@ -142,6 +145,8 @@ class ExperimentCard:
         self.rect = pygame.Rect(x, y, w, h)
         self.index = index
         self.data = data
+        self._gambar = None          # cache gambar jalur/jejak (dibuat sekali)
+        self.map_rect_layar = None   # area gambar di layar (untuk klik perbesar)
         
     def draw(self, screen, screen_offset_y, maks=None):
         draw_rect = self.rect.copy()
@@ -149,6 +154,7 @@ class ExperimentCard:
         maks = maks or {}
         warna_algo = theme.warna_algoritma(self.data.get("algoritma", ""))
 
+        self.map_rect_layar = None
         if draw_rect.bottom < 0 or draw_rect.top > screen.get_height():
             return
 
@@ -174,8 +180,16 @@ class ExperimentCard:
         pygame.draw.rect(screen, C_MAP_BG, map_rect, border_radius=10)
         pygame.draw.rect(screen, C_MAP_BORDER, map_rect, 2, border_radius=10)
         
-        maze_data = _load_maze_data(self.data["maze_id"])
-        preview_surf = _build_preview(maze_data, map_h - 60)
+        jejak = self.data.get("jejak")
+        if jejak:
+            # Gambar jalur (Pac-Man diam) / jejak (Pac-Man bergerak) hantu.
+            if self._gambar is None:
+                self._gambar = gambar_jejak.buat_gambar(jejak, map_h - 60)
+            preview_surf = self._gambar
+            self.map_rect_layar = map_rect.copy()
+        else:
+            maze_data = _load_maze_data(self.data["maze_id"])
+            preview_surf = _build_preview(maze_data, map_h - 60)
         pr = preview_surf.get_rect(center=(map_rect.centerx, map_rect.y + (map_h - 30)//2))
         screen.blit(preview_surf, pr)
 
@@ -224,6 +238,63 @@ class ExperimentCard:
                 pygame.draw.rect(screen, warna_algo,
                                  (track.left, track.top, int(track.width * rasio), 4),
                                  border_radius=2)
+
+# ==============================================================================
+# PERBESAR GAMBAR & SIMPAN PNG
+# ==============================================================================
+def _info_kartu(data):
+    return ["{0} | {1} | {2}".format(data.get("algoritma", ""), data.get("kondisi", ""),
+                                     data.get("hasil", "")),
+            "Waktu {0} ms | Simpul {1} | Jalur {2} langkah".format(
+                data.get("waktu", "-"), data.get("simpul", "-"), data.get("panjang", "-"))]
+
+
+def _zoom(screen, data):
+    """Tampilkan gambar jalur/jejak besar. Klik / tombol apa saja untuk menutup."""
+    w, h = screen.get_size()
+    clock = pygame.time.Clock()
+    sisi = max(120, min(w - 80, h - 190))
+    gambar = gambar_jejak.buat_gambar(data["jejak"], sisi)
+    info = _info_kartu(data)
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return "quit"
+            if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                return None
+        screen.fill(C_BG)
+        _text(screen, str(data.get("nama_map", "")), 20, C_TITLE, (w // 2, 30), bold=True)
+        _text(screen, info[0], 15, theme.warna_algoritma(data.get("algoritma", "")),
+              (w // 2, 58), bold=True)
+        screen.blit(gambar, gambar.get_rect(center=(w // 2, 80 + gambar.get_height() // 2)))
+        y = 80 + gambar.get_height() + 22
+        _text(screen, info[1], 15, C_TEXT_GRAY, (w // 2, y))
+        _text(screen, gambar_jejak.legenda(data["jejak"]), 12, theme.TEXT_DIM, (w // 2, y + 24))
+        _text(screen, "klik atau tekan tombol apa saja untuk menutup", 12,
+              theme.TEXT_DIM, (w // 2, h - 18))
+        pygame.display.flip()
+        clock.tick(FPS)
+
+
+def simpan_gambar_kartu(data_percobaan):
+    """Simpan PNG semua percobaan yang punya data jejak. -> (jumlah, folder, error)."""
+    import datetime
+    folder = os.path.join(getattr(config, "BASE_DIR", "."), "hasil_pengujian",
+                          "gambar_info_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+    daftar = []
+    for i, d in enumerate(data_percobaan, 1):
+        if not d.get("jejak"):
+            continue
+        kondisi = "bergerak" if d["jejak"].get("kondisi") == "bergerak" else "diam"
+        daftar.append((
+            gambar_jejak.nama_file("percobaan{0:02d}".format(i), "maze{0}".format(d.get("maze_id", "")),
+                                   d.get("algoritma", ""), kondisi),
+            d["jejak"], str(d.get("nama_map", "")), _info_kartu(d)))
+    if not daftar:
+        return 0, folder, ""
+    jumlah, error = gambar_jejak.simpan_banyak(daftar, folder)
+    return jumlah, folder, error
+
 
 # ==============================================================================
 # FUNGSI UTAMA MENAMPILKAN UI
@@ -300,6 +371,15 @@ def show_hasil(screen, data_percobaan):
                 if btn_back_rect.collidepoint(event.pos):
                     return "back"
                 
+                # Klik gambar jalur/jejak -> perbesar
+                for kartu in cards:
+                    if (kartu.map_rect_layar is not None
+                            and kartu.map_rect_layar.collidepoint(event.pos)
+                            and kartu.data.get("jejak")):
+                        if _zoom(screen, kartu.data) == "quit":
+                            return "quit"
+                        break
+
                 # Klik Tombol Export
                 if btn_export_rect.collidepoint(event.pos):
                     if not data_percobaan:
@@ -309,6 +389,11 @@ def show_hasil(screen, data_percobaan):
                         sukses, pesan = export_to_csv(data_percobaan)
                         if sukses:
                             msg_simpan = f"Berhasil disimpan ke: {pesan}"
+                            n_gambar, folder_gambar, err_gambar = simpan_gambar_kartu(data_percobaan)
+                            if n_gambar:
+                                msg_simpan += f" (+{n_gambar} gambar PNG di {folder_gambar})"
+                            elif err_gambar:
+                                msg_simpan += f" (gambar gagal: {err_gambar})"
                             msg_timer = 180 
                         else:
                             msg_simpan = f"Gagal: {pesan}"
@@ -352,6 +437,8 @@ def show_hasil(screen, data_percobaan):
         if msg_timer > 0:
             msg_timer -= 1
             _text(screen, msg_simpan, int(16), C_MSG_SUCCESS, (w // 2, 90), bold=True)
+        elif any(d.get("jejak") for d in data_percobaan):
+            _text(screen, "Klik gambar untuk memperbesar", 12, C_TEXT_GRAY, (w // 2, 90))
 
         for card in cards:
             card.draw(screen, scroll_y, maks)
