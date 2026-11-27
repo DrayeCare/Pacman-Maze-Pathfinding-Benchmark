@@ -14,7 +14,8 @@ from tampilan.ui_setting import show_setting
 from tampilan.ui_info import show_hasil
 from tampilan.ui_record import show_record_summary
 from tampilan.ui_record_manager import show_record_manager
-from tampilan.ui_playback import show_playback_config, show_playback_result
+from tampilan.ui_playback import (show_playback_config, show_playback_pair_result,
+                                   show_playback_result)
 
 data_hasil_percobaan = []
 
@@ -23,7 +24,7 @@ def _label_algo(algo):
     return {"bfs": "BFS", "astar": "A*", "duel": "BFS + A*"}.get(algo, algo)
 
 
-def _catat_hasil(stats, maze_id, nama_map, kondisi, algo, kemenangan):
+def _catat_hasil(stats, maze_id, nama_map, kondisi, algo, kemenangan, jejak=None):
     """Satu baris hasil untuk layar INFO (definisi metrik tidak diubah)."""
     data_hasil_percobaan.append({
         "maze_id": maze_id,
@@ -34,6 +35,7 @@ def _catat_hasil(stats, maze_id, nama_map, kondisi, algo, kemenangan):
         "panjang": int(stats.get("path_length", 0)),
         "algoritma": _label_algo(algo),
         "hasil": kemenangan,
+        "jejak": jejak,  # data gambar jalur/jejak hantu (None bila tidak ada)
     })
 
 
@@ -51,6 +53,7 @@ def _catat_hasil_playback(hasil):
         "Pac-Man Bergerak", hasil["algorithm"],
         "MENANG" if hasil["winner"] == "pacman" else (
             "KALAH" if hasil["winner"] == "ghost" else "SELESAI"),
+        jejak=(hasil["_game"].data_jejak(0) if hasil.get("_game") is not None else None),
     )
 
 
@@ -84,7 +87,7 @@ def mainkan(screen, pilihan, session=None, mode="manual"):
             if aksi == "quit":
                 return "quit"
             # Ringkasan penyimpanan; tidak memaksa pindah ke playback.
-            return show_record_summary(screen, session.last_record_info)
+            return show_record_summary(screen, session.last_record_info, session)
 
         if aksi != "finished":
             return aksi
@@ -92,13 +95,14 @@ def mainkan(screen, pilihan, session=None, mode="manual"):
         # Mode duel menyimpan satu baris per algoritma.
         daftar_stats = (game.get_all_stats() if game.is_duel
                         else [dict(game.get_stats(), algorithm=game.algorithm)])
-        for stat in daftar_stats:
+        for idx, stat in enumerate(daftar_stats):
             algo = stat.get("algorithm", game.algorithm)
             kemenangan = "MENANG" if game.state == config.STATE_WIN else "KALAH"
             _catat_hasil(stat, pilihan["maze"],
                          config.MAZE_TITLES[pilihan["maze"]],
                          "Pac-Man Bergerak" if pilihan.get("condition") == "bergerak"
-                         else "Pac-Man Diam", algo, kemenangan)
+                         else "Pac-Man Diam", algo, kemenangan,
+                         jejak=game.data_jejak(idx))
 
         aksi = show_hasil(screen, data_hasil_percobaan)
         if aksi == "back":
@@ -110,7 +114,11 @@ def mainkan(screen, pilihan, session=None, mode="manual"):
 
 
 def jalankan_playback(screen, session):
-    """PLAYBACK: pilih rekaman + algoritma dulu, baru buat game."""
+    """PLAYBACK: pilih rekaman + algoritma pertama; algoritma lainnya otomatis.
+
+    Rekaman yang sama diputar untuk BFS lalu A* (atau sebaliknya) supaya adil.
+    Semua hasil terkumpul di session.results dan diekspor lewat tombol EXPORT CSV.
+    """
     while True:
         konfig = show_playback_config(screen, session)
         if konfig in ("back", "quit"):
@@ -119,10 +127,12 @@ def jalankan_playback(screen, session):
         algo = konfig["algorithm"]
         session.pilih_rekaman(path)
 
-        while True:
-            game, runner = session.build_playback_game(algo, path)
+        urutan = [algo, "astar" if algo == "bfs" else "bfs"]
+        hasil_uji = []
+        for a in urutan:
+            game, runner = session.build_playback_game(a, path)
             if game is None:
-                break  # rekaman rusak/kosong: kembali ke konfigurasi
+                break  # rekaman rusak/kosong
 
             aksi = run_game(screen, game, session, mode="playback")
             if aksi == "quit":
@@ -136,16 +146,20 @@ def jalankan_playback(screen, session):
                 break
 
             _catat_hasil_playback(hasil)
-            aksi = show_playback_result(screen, hasil)
-            if aksi == "play_again":
-                continue
-            if aksi == "change_algo":
-                algo = "astar" if algo == "bfs" else "bfs"
-                continue
-            if aksi == "menu":
-                return "menu"
-            if aksi == "quit":
-                return "quit"
+            hasil_uji.append(hasil)
+            if hasil.get("status") == "stopped":
+                break  # dihentikan manual: jangan lanjut ke algoritma berikutnya
+
+        if not hasil_uji:
+            continue  # kembali ke layar konfigurasi
+
+        aksi = show_playback_pair_result(screen, session, hasil_uji)
+        if aksi == "again":
+            continue
+        if aksi == "menu":
+            return "menu"
+        if aksi == "quit":
+            return "quit"
 
 
 def main():

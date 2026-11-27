@@ -369,6 +369,10 @@ class GhostAgent:
         self.search_count = 0
         self.last_path_length = 0
         self.last_move_time = float(last_move_time)
+        # Untuk gambar hasil: jejak nyata + rencana/area pencarian pertama.
+        self.jejak = [tuple(pos)]
+        self.visited_awal = []
+        self.path_awal = []
 
     @property
     def stats(self):
@@ -457,6 +461,33 @@ class Game:
             pass
 
         self.update_ghost_path()
+        self._catat_awal()
+
+    def _catat_awal(self):
+        """Reset jejak untuk gambar hasil (dipanggil saat game/playback dimulai)."""
+        self.jejak_pacman = [tuple(self.pacman_pos)]
+        for ghost in self.ghosts:
+            ghost.jejak = [tuple(ghost.pos)]
+            ghost.visited_awal = [tuple(p) for p in ghost.visited]
+            ghost.path_awal = [tuple(ghost.pos)] + [tuple(p) for p in ghost.path]
+
+    def data_jejak(self, index=0):
+        """Data untuk menggambar hasil (lihat tampilan/gambar_jejak.py)."""
+        ghost = self.ghosts[index]
+        if self.state == config.STATE_WIN:
+            hasil = "menang"
+        elif self.state == config.STATE_LOSE:
+            hasil = "kalah"
+        else:
+            hasil = "berhenti"
+        return {
+            "grid": self.grid, "exit": tuple(self.exit_pos),
+            "algoritma": ghost.algorithm, "kondisi": self.condition,
+            "hasil": hasil, "jejak_pacman": list(self.jejak_pacman),
+            "jejak_hantu": list(ghost.jejak),
+            "visited_awal": list(ghost.visited_awal),
+            "path_awal": list(ghost.path_awal),
+        }
 
     # Kompatibilitas dengan pemanggil lama yang memakai ghost tunggal.
     @property
@@ -638,6 +669,7 @@ class Game:
                         self.pacman_last_move_time = now
                     else:
                         self.pacman_last_move_time += interval_ms
+                    self.jejak_pacman.append(tuple(self.pacman_pos))
                     self.update_ghost_path()
                     self.check_game_conditions()
 
@@ -659,6 +691,8 @@ class Game:
                 self._hitung_path(ghost)  # target sudah tercapai: cari ulang
                 if ghost.path:
                     ghost.pos = list(ghost.path.pop(0))
+            if tuple(ghost.pos) != ghost.jejak[-1]:
+                ghost.jejak.append(tuple(ghost.pos))
             self.check_game_conditions()
             if self.state != config.STATE_PLAYING:
                 break
@@ -709,6 +743,7 @@ class Game:
             ghost.total_time = 0.0
             ghost.search_count = 0
             ghost.last_path_length = max(len(ghost.path), 0)
+        self._catat_awal()
 
 
 

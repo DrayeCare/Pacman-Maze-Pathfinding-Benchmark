@@ -177,7 +177,10 @@ def pilih_spawn(screen, maze_path, duel=False):
                 if event.key == pygame.K_RETURN:
                     simpan()
                     return hasil()
-                if event.key == pygame.K_1:
+                if pilih == "cost" and pygame.K_2 <= event.key <= pygame.K_9:
+                    # Di mode cost, angka 2-9 = nilai cost, bukan pindah alat.
+                    nilai_biaya = event.key - pygame.K_0
+                elif event.key == pygame.K_1:
                     pilih = "pacman"
                 elif event.key == pygame.K_2:
                     pilih = "bfs"
@@ -190,7 +193,7 @@ def pilih_spawn(screen, maze_path, duel=False):
                 elif event.key == pygame.K_g:
                     set_pisah(not pisah)
                 elif event.key == pygame.K_c:
-                    pilih = "cost"
+                    pilih = "pacman" if pilih == "cost" else "cost"
                 elif event.key == pygame.K_h:
                     biaya.clear()
                 elif event.key == pygame.K_r:
@@ -198,11 +201,9 @@ def pilih_spawn(screen, maze_path, duel=False):
                 elif event.key == pygame.K_a:
                     atur_ulang("random")
                 if pilih == "cost":
-                    if pygame.K_4 <= event.key <= pygame.K_9:
-                        nilai_biaya = event.key - pygame.K_0
-                    elif event.key in (pygame.K_PLUS, pygame.K_EQUALS):
+                    if event.key in (pygame.K_PLUS, pygame.K_EQUALS, pygame.K_KP_PLUS):
                         nilai_biaya = min(99, nilai_biaya + 1)
-                    elif event.key == pygame.K_MINUS:
+                    elif event.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
                         nilai_biaya = max(1, nilai_biaya - 1)
             for b in tombol:
                 if not b.clicked(event):
@@ -289,8 +290,8 @@ def pilih_spawn(screen, maze_path, duel=False):
         pygame.draw.line(screen, theme.BORDER, (hud.left, hud.top),
                          (hud.right, hud.top), 2)
         if pilih == "cost":
-            petunjuk = ("MODE COST: 4-9 nilai | +/- atur ({0}) | klik petak pasang | "
-                        "klik kanan hapus | H hapus semua | ENTER mulai").format(nilai_biaya)
+            petunjuk = ("MODE COST: 2-9 nilai ({0}) | +/- atur | klik petak pasang | "
+                        "klik kanan hapus | H hapus semua | C keluar | ENTER mulai").format(nilai_biaya)
         elif duel:
             petunjuk = ("1 Pac-Man | 2 BFS | 3 Exit | 4 A* | C cost | G "
                         "{0} | R reset | A acak | ENTER mulai").format(

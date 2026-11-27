@@ -1,0 +1,4 @@
+﻿sep=;
+No Uji;Maze;Uji ke- di Maze;Rekaman;Algoritma;Status;Pemenang;Input Diterapkan;Tick;Waktu Pencarian (ms);Simpul Dieksplorasi;Panjang Jalur (Langkah);Desync;Posisi Awal Pac-Man;Posisi Awal Ghost
+1;Maze 1: Sedikit Belokan;1;cobaa;BFS;Selesai;Pac-Man;123;171;0,821;65;2;0;(1,1);(18,19)
+1;Maze 1: Sedikit Belokan;1;cobaa;A*;Selesai;Pac-Man;123;171;1,504;34;2;0;(1,1);(18,19)
